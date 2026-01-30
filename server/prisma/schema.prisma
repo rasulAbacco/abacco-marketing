@@ -1,0 +1,343 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model EmailAccount {
+  id       Int     @id @default(autoincrement())
+  empId    String?
+  email    String  @unique
+  provider String? // gmail, outlook, zoho, generic
+
+  // IMAP Settings
+  imapHost   String?
+  imapPort   Int?
+  imapUser   String?
+  imapSecure Boolean? @default(true)
+
+  // SMTP Settings
+  smtpHost   String?
+  smtpPort   Int?
+  smtpUser   String?
+  smtpSecure Boolean? @default(true)
+
+  // Auth
+  authType      String  @default("password") // password, oauth2
+  encryptedPass String?
+
+  // OAuth2 Tokens
+  oauthClientId     String?
+  oauthClientSecret String?
+  refreshToken      String?
+  accessToken       String?
+  tokenExpiry       DateTime?
+
+  // Gmail Push
+  watchExpiry DateTime?
+  historyId   String?
+
+  // Sync State
+  verified       Boolean   @default(true)
+  lastFullSyncAt DateTime?
+  lastSyncAt     DateTime?
+  syncStatus     String?   @default("idle")
+  syncError      String?
+
+  // Signature
+  signature String?
+
+  senderName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  messages          EmailMessage[]
+  scheduledMessages ScheduledMessage[]
+  syncStates        SyncState[]
+  folders           EmailFolder[]
+  Conversation      Conversation[]
+
+  @@index([userId])
+  @@index([email])
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  empId     String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  emailAccounts    EmailAccount[]
+  ScheduledMessage ScheduledMessage[]
+  Tag              Tag[]
+}
+
+model Conversation {
+  id             String @id
+  emailAccountId Int
+
+  subject        String?
+  participants   String?
+  toRecipients   String?
+  ccRecipients   String?
+  initiatorEmail String?
+  lastMessageAt  DateTime?
+  messageCount   Int       @default(0)
+  unreadCount    Int       @default(0)
+  isStarred      Boolean   @default(false)
+
+  account         EmailAccount       @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  messages        EmailMessage[]
+  scheduled       ScheduledMessage[]
+  ConversationTag ConversationTag[]
+
+  @@index([emailAccountId])
+}
+
+model EmailMessage {
+  id             Int     @id @default(autoincrement())
+  emailAccountId Int
+  conversationId String?
+
+  messageId String?
+  fromEmail String
+  fromName  String?
+  toEmail   String?
+  ccEmail   String?
+  subject   String?
+  body      String?
+  direction String
+  folder    String?
+
+  isRead    Boolean @default(false)
+  isStarred Boolean @default(false)
+
+  isSpam    Boolean @default(false)
+  isTrash   Boolean @default(false)
+  hideTrash Boolean @default(false)
+  hideInbox Boolean @default(false)
+
+  sentAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  account      EmailAccount  @relation(fields: [emailAccountId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+
+  attachments Attachment[]
+  MessageTag  MessageTag[]
+
+  // ✅ THIS is what enables findUnique({ emailAccountId_messageId })
+  @@unique([emailAccountId, messageId])
+  @@index([emailAccountId, conversationId])
+}
+
+model Attachment {
+  id             Int          @id @default(autoincrement())
+  emailMessageId Int
+  filename       String? // ✅ MAKE OPTIONAL
+  mimeType       String?
+  size           Int?
+  storageUrl     String?
+  hash           String?
+  message        EmailMessage @relation(fields: [emailMessageId], references: [id])
+}
+
+model ScheduledMessage {
+  id Int @id @default(autoincrement())
+
+  accountId      Int?
+  conversationId String?
+
+  toEmail  String
+  ccEmail  String?
+  subject  String?
+  bodyHtml String?
+  sendAt   DateTime
+
+  leadStatus   String?
+  status       String  @default("pending") // pending | sent
+  isFollowedUp Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  EmailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id])
+  emailAccountId Int?
+  Conversation   Conversation? @relation(fields: [conversationId], references: [id])
+}
+
+model SyncState {
+  id        Int      @id @default(autoincrement())
+  accountId Int
+  folder    String
+  lastUid   Int?
+  updatedAt DateTime @updatedAt
+
+  account EmailAccount @relation(fields: [accountId], references: [id])
+}
+
+model EmailFolder {
+  id        Int    @id @default(autoincrement())
+  accountId Int
+  name      String
+
+  account EmailAccount @relation(fields: [accountId], references: [id])
+}
+
+model CustomStatus {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+}
+
+model CustomLeadStatus {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  color       String   @default("bg-gray-100 text-gray-800 border-gray-200")
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Tag {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  empId     String?
+  name      String
+  color     String?
+  createdAt DateTime @default(now())
+
+  conversationTags ConversationTag[]
+  messageTags      MessageTag[]
+  user             User              @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model ConversationTag {
+  conversationId String
+  tagId          Int
+  userId         String
+  Conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  Tag            Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, tagId])
+}
+
+model MessageTag {
+  messageId Int
+  tagId     Int
+  userId    String
+  Message   EmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  Tag       Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, tagId])
+}
+
+model Campaign {
+  id             Int    @id @default(autoincrement())
+  name           String
+  userId         String
+  emailAccountId Int?
+
+  subject          String?
+  fromAccountIds   String?
+  pitchIds         String?
+  bodyHtml         String
+  originalBodyHtml String?
+
+  status   String @default("draft") // draft | sending | completed | scheduled
+  sendType String // immediate | scheduled
+
+  scheduledAt      DateTime?
+  createdAt        DateTime  @default(now())
+  parentCampaignId Int?
+
+  recipients CampaignRecipient[]
+
+  @@unique([name, userId])
+}
+
+model CampaignRecipient {
+  id         Int     @id @default(autoincrement())
+  campaignId Int
+  email      String
+  status     String  @default("pending") // pending | sent | failed
+  error      String?
+
+  sentAt        DateTime?
+  accountId     Int?
+  sentSubject   String?
+  sentBodyHtml  String?
+  sentFromEmail String?
+  campaign      Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+}
+
+model PitchTemplate {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  name      String
+  subject   String?
+  bodyHtml  String
+  type      String
+  createdAt DateTime @default(now())
+}
+
+model Lead {
+  id Int @id @default(autoincrement())
+
+  // ===== Core Identity =====
+  email   String // Lead Email (CAN BE DUPLICATE)
+  name    String?
+  subject String?
+
+  // ===== Lead Classification =====
+  leadType LeadType?
+
+  // ===== Contact Info =====
+  fromName  String?
+  fromEmail String? @unique // ✅ Client Email (MUST BE UNIQUE)
+  toEmail   String?
+  ccEmail   String?
+  bccEmail  String?
+
+  phone       String?
+  country     String?
+  website     String?
+  leadLink    String?
+  contactDate DateTime?
+
+  // ===== Email Content =====
+  emailPitch String? @db.Text
+
+  // ===== Conversation Tracking =====
+  conversationId String?
+  totalMessages  Int     @default(0)
+  thread         Json?
+
+  // ===== System =====
+  sentAt     DateTime?
+  headerText String?   @db.Text
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+enum LeadType {
+  ASSOCIATION
+  ATTENDEES
+  INDUSTRY
+}

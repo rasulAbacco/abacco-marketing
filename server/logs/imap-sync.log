@@ -1,0 +1,336 @@
+[2026-01-27T14:24:16.336Z] [SYSTEM] 🚀 Starting bulk IMAP sync for all accounts
+[2026-01-27T14:24:16.395Z] [SYSTEM] Found 6 verified account(s)
+[2026-01-27T14:24:16.397Z] [keithburtb2bleads@gmail.com] 🔄 Starting IMAP sync
+[2026-01-27T14:24:16.404Z] [keithburtb2bleads@gmail.com] Connecting to IMAP server...
+[2026-01-27T14:24:16.447Z] [lucasb2bleads@gmail.com] 🔄 Starting IMAP sync
+[2026-01-27T14:24:16.448Z] [lucasb2bleads@gmail.com] Connecting to IMAP server...
+[2026-01-27T14:24:18.915Z] [lucasb2bleads@gmail.com] ✅ Connected to IMAP server
+[2026-01-27T14:24:19.410Z] [keithburtb2bleads@gmail.com] ✅ Connected to IMAP server
+[2026-01-27T14:24:19.500Z] [lucasb2bleads@gmail.com] Detected folder: INBOX → inbox
+[2026-01-27T14:24:19.501Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:24:19.502Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:24:19.503Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:24:19.503Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:24:19.504Z] [lucasb2bleads@gmail.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:24:19.505Z] [lucasb2bleads@gmail.com] Processing folder: INBOX
+[2026-01-27T14:24:20.108Z] [keithburtb2bleads@gmail.com] Detected folder: INBOX → inbox
+[2026-01-27T14:24:20.109Z] [keithburtb2bleads@gmail.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:24:20.110Z] [keithburtb2bleads@gmail.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:24:20.110Z] [keithburtb2bleads@gmail.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:24:20.111Z] [keithburtb2bleads@gmail.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:24:20.112Z] [keithburtb2bleads@gmail.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:24:20.112Z] [keithburtb2bleads@gmail.com] Processing folder: INBOX
+[2026-01-27T14:24:20.427Z] [lucasb2bleads@gmail.com] Found 2082 messages in INBOX, syncing last 200
+[2026-01-27T14:24:21.051Z] [keithburtb2bleads@gmail.com] Found 973 messages in INBOX, syncing last 200
+[2026-01-27T14:25:16.343Z] [SYSTEM] 🚀 Starting bulk IMAP sync for all accounts
+[2026-01-27T14:25:16.353Z] [SYSTEM] Found 6 verified account(s)
+[2026-01-27T14:25:16.356Z] [keithburtb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:25:16.359Z] [lucasb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:25:16.366Z] [henrymikeb2bleads@gmail.com] 🔄 Starting IMAP sync
+[2026-01-27T14:25:16.373Z] [henrymikeb2bleads@gmail.com] Connecting to IMAP server...
+[2026-01-27T14:25:16.381Z] [Grace_Walker@expomedialeads.com] 🔄 Starting IMAP sync
+[2026-01-27T14:25:16.382Z] [Grace_Walker@expomedialeads.com] Connecting to IMAP server...
+[2026-01-27T14:25:18.647Z] [Grace_Walker@expomedialeads.com] ✅ Connected to IMAP server
+[2026-01-27T14:25:18.933Z] [henrymikeb2bleads@gmail.com] ✅ Connected to IMAP server
+[2026-01-27T14:25:19.339Z] [Grace_Walker@expomedialeads.com] Detected folder: INBOX → inbox
+[2026-01-27T14:25:19.340Z] [Grace_Walker@expomedialeads.com] Detected folder: Sent Items → sent
+[2026-01-27T14:25:19.341Z] [Grace_Walker@expomedialeads.com] Detected folder: Drafts → drafts
+[2026-01-27T14:25:19.342Z] [Grace_Walker@expomedialeads.com] Detected folder: Junk E-mail → spam
+[2026-01-27T14:25:19.343Z] [Grace_Walker@expomedialeads.com] Detected folder: Deleted Items → trash
+[2026-01-27T14:25:19.343Z] [Grace_Walker@expomedialeads.com] Detected folder: Outbox → sent
+[2026-01-27T14:25:19.344Z] [Grace_Walker@expomedialeads.com] 📂 Processing 6 folder(s)
+[2026-01-27T14:25:19.345Z] [Grace_Walker@expomedialeads.com] Processing folder: INBOX
+[2026-01-27T14:25:19.533Z] [henrymikeb2bleads@gmail.com] Detected folder: INBOX → inbox
+[2026-01-27T14:25:19.534Z] [henrymikeb2bleads@gmail.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:25:19.535Z] [henrymikeb2bleads@gmail.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:25:19.538Z] [henrymikeb2bleads@gmail.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:25:19.539Z] [henrymikeb2bleads@gmail.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:25:19.540Z] [henrymikeb2bleads@gmail.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:25:19.543Z] [henrymikeb2bleads@gmail.com] Processing folder: INBOX
+[2026-01-27T14:25:20.242Z] [Grace_Walker@expomedialeads.com] Found 3 messages in INBOX, syncing last 200
+[2026-01-27T14:25:20.554Z] [henrymikeb2bleads@gmail.com] Found 1505 messages in INBOX, syncing last 200
+[2026-01-27T14:25:21.581Z] [Grace_Walker@expomedialeads.com] Folder INBOX: 1 synced, 2 failed
+[2026-01-27T14:25:21.582Z] [Grace_Walker@expomedialeads.com] Processing folder: Sent Items
+[2026-01-27T14:25:22.395Z] [Grace_Walker@expomedialeads.com] Found 142 messages in Sent Items, syncing last 200
+[2026-01-27T14:25:32.862Z] [lucasb2bleads@gmail.com] Folder INBOX: 200 synced, 0 failed
+[2026-01-27T14:25:32.863Z] [lucasb2bleads@gmail.com] Processing folder: [Gmail]/Sent Mail
+[2026-01-27T14:25:34.066Z] [lucasb2bleads@gmail.com] Found 10171 messages in [Gmail]/Sent Mail, syncing last 200
+[2026-01-27T14:25:48.773Z] [keithburtb2bleads@gmail.com] Folder INBOX: 200 synced, 0 failed
+[2026-01-27T14:25:48.775Z] [keithburtb2bleads@gmail.com] Processing folder: [Gmail]/Sent Mail
+[2026-01-27T14:25:49.968Z] [keithburtb2bleads@gmail.com] Found 6589 messages in [Gmail]/Sent Mail, syncing last 200
+[2026-01-27T14:25:56.483Z] [Grace_Walker@expomedialeads.com] Folder Sent Items: 94 synced, 48 failed
+[2026-01-27T14:25:56.484Z] [Grace_Walker@expomedialeads.com] Processing folder: Drafts
+[2026-01-27T14:25:57.308Z] [Grace_Walker@expomedialeads.com] Found 5 messages in Drafts, syncing last 200
+[2026-01-27T14:26:03.393Z] [Grace_Walker@expomedialeads.com] Folder Drafts: 0 synced, 5 failed
+[2026-01-27T14:26:03.395Z] [Grace_Walker@expomedialeads.com] Processing folder: Junk E-mail
+[2026-01-27T14:26:04.214Z] [Grace_Walker@expomedialeads.com] Folder Junk E-mail is empty
+[2026-01-27T14:26:04.215Z] [Grace_Walker@expomedialeads.com] Processing folder: Deleted Items
+[2026-01-27T14:26:07.999Z] [Grace_Walker@expomedialeads.com] Found 28708 messages in Deleted Items, syncing last 200
+[2026-01-27T14:26:16.350Z] [SYSTEM] 🚀 Starting bulk IMAP sync for all accounts
+[2026-01-27T14:26:16.354Z] [SYSTEM] Found 6 verified account(s)
+[2026-01-27T14:26:16.355Z] [keithburtb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:26:16.359Z] [lucasb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:26:16.362Z] [henrymikeb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:26:16.364Z] [Grace_Walker@expomedialeads.com] Sync already in progress, skipping
+[2026-01-27T14:26:16.365Z] [mia.mitchell@connectexpoleads.com] 🔄 Starting IMAP sync
+[2026-01-27T14:26:16.367Z] [mia.mitchell@connectexpoleads.com] Connecting to IMAP server...
+[2026-01-27T14:26:16.376Z] [support@veriemails.com] 🔄 Starting IMAP sync
+[2026-01-27T14:26:16.377Z] [support@veriemails.com] Connecting to IMAP server...
+[2026-01-27T14:26:17.255Z] [mia.mitchell@connectexpoleads.com] ✅ Connected to IMAP server
+[2026-01-27T14:26:17.299Z] [mia.mitchell@connectexpoleads.com] Detected folder: INBOX → inbox
+[2026-01-27T14:26:17.300Z] [mia.mitchell@connectexpoleads.com] Detected folder: Sent → sent
+[2026-01-27T14:26:17.303Z] [mia.mitchell@connectexpoleads.com] Detected folder: Drafts → drafts
+[2026-01-27T14:26:17.305Z] [mia.mitchell@connectexpoleads.com] Detected folder: Junk → spam
+[2026-01-27T14:26:17.309Z] [mia.mitchell@connectexpoleads.com] Detected folder: Trash → trash
+[2026-01-27T14:26:17.310Z] [mia.mitchell@connectexpoleads.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:26:17.311Z] [mia.mitchell@connectexpoleads.com] Processing folder: INBOX
+[2026-01-27T14:26:18.909Z] [support@veriemails.com] ✅ Connected to IMAP server
+[2026-01-27T14:26:19.499Z] [support@veriemails.com] Detected folder: INBOX → inbox
+[2026-01-27T14:26:19.500Z] [support@veriemails.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:26:19.503Z] [support@veriemails.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:26:19.505Z] [support@veriemails.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:26:19.505Z] [support@veriemails.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:26:19.507Z] [support@veriemails.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:26:19.510Z] [support@veriemails.com] Processing folder: INBOX
+[2026-01-27T14:26:20.382Z] [support@veriemails.com] Found 12 messages in INBOX, syncing last 200
+[2026-01-27T14:26:22.635Z] [mia.mitchell@connectexpoleads.com] Found 10 messages in INBOX, syncing last 200
+[2026-01-27T14:26:23.831Z] [mia.mitchell@connectexpoleads.com] Folder INBOX: 10 synced, 0 failed
+[2026-01-27T14:26:23.832Z] [mia.mitchell@connectexpoleads.com] Processing folder: Sent
+[2026-01-27T14:26:24.173Z] [support@veriemails.com] Folder INBOX: 12 synced, 0 failed
+[2026-01-27T14:26:24.178Z] [support@veriemails.com] Processing folder: [Gmail]/Sent Mail
+[2026-01-27T14:26:25.072Z] [support@veriemails.com] Found 4 messages in [Gmail]/Sent Mail, syncing last 200
+[2026-01-27T14:26:26.279Z] [support@veriemails.com] Folder [Gmail]/Sent Mail: 4 synced, 0 failed
+[2026-01-27T14:26:26.281Z] [support@veriemails.com] Processing folder: [Gmail]/Drafts
+[2026-01-27T14:26:27.150Z] [support@veriemails.com] Folder [Gmail]/Drafts is empty
+[2026-01-27T14:26:27.151Z] [support@veriemails.com] Processing folder: [Gmail]/Spam
+[2026-01-27T14:26:28.020Z] [support@veriemails.com] Folder [Gmail]/Spam is empty
+[2026-01-27T14:26:28.021Z] [support@veriemails.com] Processing folder: [Gmail]/Trash
+[2026-01-27T14:26:28.893Z] [support@veriemails.com] Folder [Gmail]/Trash is empty
+[2026-01-27T14:26:28.894Z] [support@veriemails.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:26:29.184Z] [support@veriemails.com] IMAP connection closed
+[2026-01-27T14:26:29.190Z] [support@veriemails.com] IMAP client logged out
+[2026-01-27T14:26:31.947Z] [mia.mitchell@connectexpoleads.com] Folder Sent is empty
+[2026-01-27T14:26:31.948Z] [mia.mitchell@connectexpoleads.com] Processing folder: Drafts
+[2026-01-27T14:26:38.854Z] [henrymikeb2bleads@gmail.com] Folder INBOX: 200 synced, 0 failed
+[2026-01-27T14:26:38.856Z] [henrymikeb2bleads@gmail.com] Processing folder: [Gmail]/Sent Mail
+[2026-01-27T14:26:39.982Z] [henrymikeb2bleads@gmail.com] Found 7879 messages in [Gmail]/Sent Mail, syncing last 200
+[2026-01-27T14:26:42.069Z] [mia.mitchell@connectexpoleads.com] Folder Drafts is empty
+[2026-01-27T14:26:42.071Z] [mia.mitchell@connectexpoleads.com] Processing folder: Junk
+[2026-01-27T14:26:43.664Z] [lucasb2bleads@gmail.com] Folder [Gmail]/Sent Mail: 200 synced, 0 failed
+[2026-01-27T14:26:43.665Z] [lucasb2bleads@gmail.com] Processing folder: [Gmail]/Drafts
+[2026-01-27T14:26:44.597Z] [lucasb2bleads@gmail.com] Found 1 messages in [Gmail]/Drafts, syncing last 200
+[2026-01-27T14:26:44.910Z] [lucasb2bleads@gmail.com] Folder [Gmail]/Drafts: 0 synced, 1 failed
+[2026-01-27T14:26:44.913Z] [lucasb2bleads@gmail.com] Processing folder: [Gmail]/Spam
+[2026-01-27T14:26:45.808Z] [lucasb2bleads@gmail.com] Found 1 messages in [Gmail]/Spam, syncing last 200
+[2026-01-27T14:26:46.198Z] [lucasb2bleads@gmail.com] Folder [Gmail]/Spam: 1 synced, 0 failed
+[2026-01-27T14:26:46.199Z] [lucasb2bleads@gmail.com] Processing folder: [Gmail]/Trash
+[2026-01-27T14:26:47.104Z] [lucasb2bleads@gmail.com] Found 109 messages in [Gmail]/Trash, syncing last 200
+[2026-01-27T14:26:52.198Z] [mia.mitchell@connectexpoleads.com] Folder Junk is empty
+[2026-01-27T14:26:52.199Z] [mia.mitchell@connectexpoleads.com] Processing folder: Trash
+[2026-01-27T14:26:56.358Z] [Grace_Walker@expomedialeads.com] Folder Deleted Items: 200 synced, 0 failed
+[2026-01-27T14:26:56.359Z] [Grace_Walker@expomedialeads.com] Processing folder: Outbox
+[2026-01-27T14:26:57.146Z] [Grace_Walker@expomedialeads.com] Folder Outbox is empty
+[2026-01-27T14:26:57.147Z] [Grace_Walker@expomedialeads.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:26:57.372Z] [Grace_Walker@expomedialeads.com] IMAP connection closed
+[2026-01-27T14:26:57.374Z] [Grace_Walker@expomedialeads.com] IMAP client logged out
+[2026-01-27T14:26:57.375Z] [mia.mitchell@connectexpoleads.com] Sync already in progress, skipping
+[2026-01-27T14:26:57.377Z] [support@veriemails.com] 🔄 Starting IMAP sync
+[2026-01-27T14:26:57.379Z] [support@veriemails.com] Connecting to IMAP server...
+[2026-01-27T14:26:59.983Z] [support@veriemails.com] ✅ Connected to IMAP server
+[2026-01-27T14:27:00.556Z] [support@veriemails.com] Detected folder: INBOX → inbox
+[2026-01-27T14:27:00.557Z] [support@veriemails.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:27:00.557Z] [support@veriemails.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:27:00.558Z] [support@veriemails.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:27:00.559Z] [support@veriemails.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:27:00.559Z] [support@veriemails.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:27:00.560Z] [support@veriemails.com] Processing folder: INBOX
+[2026-01-27T14:27:01.442Z] [support@veriemails.com] Found 12 messages in INBOX, syncing last 200
+[2026-01-27T14:27:02.348Z] [mia.mitchell@connectexpoleads.com] Folder Trash is empty
+[2026-01-27T14:27:02.349Z] [mia.mitchell@connectexpoleads.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:27:02.371Z] [mia.mitchell@connectexpoleads.com] IMAP connection closed
+[2026-01-27T14:27:02.372Z] [mia.mitchell@connectexpoleads.com] IMAP client logged out
+[2026-01-27T14:27:02.375Z] [SYSTEM] ✅ Bulk sync complete: 6 successful, 0 failed
+[2026-01-27T14:27:05.205Z] [support@veriemails.com] Folder INBOX: 12 synced, 0 failed
+[2026-01-27T14:27:05.206Z] [support@veriemails.com] Processing folder: [Gmail]/Sent Mail
+[2026-01-27T14:27:06.084Z] [support@veriemails.com] Found 4 messages in [Gmail]/Sent Mail, syncing last 200
+[2026-01-27T14:27:07.293Z] [support@veriemails.com] Folder [Gmail]/Sent Mail: 4 synced, 0 failed
+[2026-01-27T14:27:07.294Z] [support@veriemails.com] Processing folder: [Gmail]/Drafts
+[2026-01-27T14:27:08.168Z] [support@veriemails.com] Folder [Gmail]/Drafts is empty
+[2026-01-27T14:27:08.169Z] [support@veriemails.com] Processing folder: [Gmail]/Spam
+[2026-01-27T14:27:09.039Z] [support@veriemails.com] Folder [Gmail]/Spam is empty
+[2026-01-27T14:27:09.040Z] [support@veriemails.com] Processing folder: [Gmail]/Trash
+[2026-01-27T14:27:09.936Z] [support@veriemails.com] Folder [Gmail]/Trash is empty
+[2026-01-27T14:27:09.937Z] [support@veriemails.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:27:10.223Z] [support@veriemails.com] IMAP connection closed
+[2026-01-27T14:27:10.223Z] [support@veriemails.com] IMAP client logged out
+[2026-01-27T14:27:16.356Z] [SYSTEM] 🚀 Starting bulk IMAP sync for all accounts
+[2026-01-27T14:27:16.359Z] [SYSTEM] Found 6 verified account(s)
+[2026-01-27T14:27:16.360Z] [keithburtb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:27:16.360Z] [lucasb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:27:16.361Z] [henrymikeb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:27:16.363Z] [Grace_Walker@expomedialeads.com] 🔄 Starting IMAP sync
+[2026-01-27T14:27:16.366Z] [Grace_Walker@expomedialeads.com] Connecting to IMAP server...
+[2026-01-27T14:27:16.368Z] [mia.mitchell@connectexpoleads.com] 🔄 Starting IMAP sync
+[2026-01-27T14:27:16.374Z] [mia.mitchell@connectexpoleads.com] Connecting to IMAP server...
+[2026-01-27T14:27:17.048Z] [mia.mitchell@connectexpoleads.com] ✅ Connected to IMAP server
+[2026-01-27T14:27:17.088Z] [mia.mitchell@connectexpoleads.com] Detected folder: INBOX → inbox
+[2026-01-27T14:27:17.089Z] [mia.mitchell@connectexpoleads.com] Detected folder: Sent → sent
+[2026-01-27T14:27:17.090Z] [mia.mitchell@connectexpoleads.com] Detected folder: Drafts → drafts
+[2026-01-27T14:27:17.091Z] [mia.mitchell@connectexpoleads.com] Detected folder: Junk → spam
+[2026-01-27T14:27:17.092Z] [mia.mitchell@connectexpoleads.com] Detected folder: Trash → trash
+[2026-01-27T14:27:17.092Z] [mia.mitchell@connectexpoleads.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:27:17.093Z] [mia.mitchell@connectexpoleads.com] Processing folder: INBOX
+[2026-01-27T14:27:18.825Z] [Grace_Walker@expomedialeads.com] ✅ Connected to IMAP server
+[2026-01-27T14:27:19.475Z] [Grace_Walker@expomedialeads.com] Detected folder: INBOX → inbox
+[2026-01-27T14:27:19.476Z] [Grace_Walker@expomedialeads.com] Detected folder: Sent Items → sent
+[2026-01-27T14:27:19.477Z] [Grace_Walker@expomedialeads.com] Detected folder: Drafts → drafts
+[2026-01-27T14:27:19.478Z] [Grace_Walker@expomedialeads.com] Detected folder: Junk E-mail → spam
+[2026-01-27T14:27:19.478Z] [Grace_Walker@expomedialeads.com] Detected folder: Deleted Items → trash
+[2026-01-27T14:27:19.479Z] [Grace_Walker@expomedialeads.com] Detected folder: Outbox → sent
+[2026-01-27T14:27:19.479Z] [Grace_Walker@expomedialeads.com] 📂 Processing 6 folder(s)
+[2026-01-27T14:27:19.480Z] [Grace_Walker@expomedialeads.com] Processing folder: INBOX
+[2026-01-27T14:27:20.265Z] [Grace_Walker@expomedialeads.com] Found 3 messages in INBOX, syncing last 200
+[2026-01-27T14:27:21.417Z] [Grace_Walker@expomedialeads.com] Folder INBOX: 1 synced, 2 failed
+[2026-01-27T14:27:21.418Z] [Grace_Walker@expomedialeads.com] Processing folder: Sent Items
+[2026-01-27T14:27:22.179Z] [mia.mitchell@connectexpoleads.com] Found 10 messages in INBOX, syncing last 200
+[2026-01-27T14:27:22.271Z] [Grace_Walker@expomedialeads.com] Found 144 messages in Sent Items, syncing last 200
+[2026-01-27T14:27:22.766Z] [lucasb2bleads@gmail.com] Folder [Gmail]/Trash: 109 synced, 0 failed
+[2026-01-27T14:27:22.767Z] [lucasb2bleads@gmail.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:27:23.022Z] [mia.mitchell@connectexpoleads.com] Folder INBOX: 10 synced, 0 failed
+[2026-01-27T14:27:23.023Z] [mia.mitchell@connectexpoleads.com] Processing folder: Sent
+[2026-01-27T14:27:23.065Z] [lucasb2bleads@gmail.com] IMAP connection closed
+[2026-01-27T14:27:23.066Z] [lucasb2bleads@gmail.com] IMAP client logged out
+[2026-01-27T14:27:23.067Z] [henrymikeb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:27:23.067Z] [Grace_Walker@expomedialeads.com] Sync already in progress, skipping
+[2026-01-27T14:27:23.068Z] [mia.mitchell@connectexpoleads.com] Sync already in progress, skipping
+[2026-01-27T14:27:23.074Z] [support@veriemails.com] 🔄 Starting IMAP sync
+[2026-01-27T14:27:23.077Z] [support@veriemails.com] Connecting to IMAP server...
+[2026-01-27T14:27:25.457Z] [support@veriemails.com] ✅ Connected to IMAP server
+[2026-01-27T14:27:26.029Z] [support@veriemails.com] Detected folder: INBOX → inbox
+[2026-01-27T14:27:26.030Z] [support@veriemails.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:27:26.030Z] [support@veriemails.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:27:26.031Z] [support@veriemails.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:27:26.031Z] [support@veriemails.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:27:26.032Z] [support@veriemails.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:27:26.032Z] [support@veriemails.com] Processing folder: INBOX
+[2026-01-27T14:27:26.927Z] [support@veriemails.com] Found 12 messages in INBOX, syncing last 200
+[2026-01-27T14:27:30.735Z] [support@veriemails.com] Folder INBOX: 12 synced, 0 failed
+[2026-01-27T14:27:30.736Z] [support@veriemails.com] Processing folder: [Gmail]/Sent Mail
+[2026-01-27T14:27:31.599Z] [support@veriemails.com] Found 4 messages in [Gmail]/Sent Mail, syncing last 200
+[2026-01-27T14:27:32.108Z] [mia.mitchell@connectexpoleads.com] Folder Sent is empty
+[2026-01-27T14:27:32.109Z] [mia.mitchell@connectexpoleads.com] Processing folder: Drafts
+[2026-01-27T14:27:32.794Z] [support@veriemails.com] Folder [Gmail]/Sent Mail: 4 synced, 0 failed
+[2026-01-27T14:27:32.795Z] [support@veriemails.com] Processing folder: [Gmail]/Drafts
+[2026-01-27T14:27:33.667Z] [support@veriemails.com] Folder [Gmail]/Drafts is empty
+[2026-01-27T14:27:33.667Z] [support@veriemails.com] Processing folder: [Gmail]/Spam
+[2026-01-27T14:27:34.553Z] [support@veriemails.com] Folder [Gmail]/Spam is empty
+[2026-01-27T14:27:34.555Z] [support@veriemails.com] Processing folder: [Gmail]/Trash
+[2026-01-27T14:27:35.431Z] [support@veriemails.com] Folder [Gmail]/Trash is empty
+[2026-01-27T14:27:35.432Z] [support@veriemails.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:27:35.719Z] [support@veriemails.com] IMAP connection closed
+[2026-01-27T14:27:35.720Z] [support@veriemails.com] IMAP client logged out
+[2026-01-27T14:27:42.192Z] [mia.mitchell@connectexpoleads.com] Folder Drafts is empty
+[2026-01-27T14:27:42.193Z] [mia.mitchell@connectexpoleads.com] Processing folder: Junk
+[2026-01-27T14:27:52.275Z] [mia.mitchell@connectexpoleads.com] Folder Junk is empty
+[2026-01-27T14:27:52.293Z] [mia.mitchell@connectexpoleads.com] Processing folder: Trash
+[2026-01-27T14:27:57.728Z] [Grace_Walker@expomedialeads.com] Folder Sent Items: 94 synced, 50 failed
+[2026-01-27T14:27:57.729Z] [Grace_Walker@expomedialeads.com] Processing folder: Drafts
+[2026-01-27T14:27:58.628Z] [Grace_Walker@expomedialeads.com] Found 5 messages in Drafts, syncing last 200
+[2026-01-27T14:28:02.391Z] [mia.mitchell@connectexpoleads.com] Folder Trash is empty
+[2026-01-27T14:28:02.393Z] [mia.mitchell@connectexpoleads.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:28:02.415Z] [mia.mitchell@connectexpoleads.com] IMAP connection closed
+[2026-01-27T14:28:02.417Z] [mia.mitchell@connectexpoleads.com] IMAP client logged out
+[2026-01-27T14:28:02.419Z] [support@veriemails.com] 🔄 Starting IMAP sync
+[2026-01-27T14:28:02.422Z] [support@veriemails.com] Connecting to IMAP server...
+[2026-01-27T14:28:05.593Z] [Grace_Walker@expomedialeads.com] Folder Drafts: 0 synced, 5 failed
+[2026-01-27T14:28:05.594Z] [Grace_Walker@expomedialeads.com] Processing folder: Junk E-mail
+[2026-01-27T14:28:05.596Z] [support@veriemails.com] ✅ Connected to IMAP server
+[2026-01-27T14:28:06.175Z] [support@veriemails.com] Detected folder: INBOX → inbox
+[2026-01-27T14:28:06.176Z] [support@veriemails.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:28:06.177Z] [support@veriemails.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:28:06.177Z] [support@veriemails.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:28:06.177Z] [support@veriemails.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:28:06.178Z] [support@veriemails.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:28:06.178Z] [support@veriemails.com] Processing folder: INBOX
+[2026-01-27T14:28:06.406Z] [Grace_Walker@expomedialeads.com] Folder Junk E-mail is empty
+[2026-01-27T14:28:06.407Z] [Grace_Walker@expomedialeads.com] Processing folder: Deleted Items
+[2026-01-27T14:28:07.048Z] [support@veriemails.com] Found 12 messages in INBOX, syncing last 200
+[2026-01-27T14:28:09.802Z] [keithburtb2bleads@gmail.com] Folder [Gmail]/Sent Mail: 200 synced, 0 failed
+[2026-01-27T14:28:09.803Z] [keithburtb2bleads@gmail.com] Processing folder: [Gmail]/Drafts
+[2026-01-27T14:28:10.214Z] [Grace_Walker@expomedialeads.com] Found 28708 messages in Deleted Items, syncing last 200
+[2026-01-27T14:28:10.861Z] [support@veriemails.com] Folder INBOX: 12 synced, 0 failed
+[2026-01-27T14:28:10.862Z] [support@veriemails.com] Processing folder: [Gmail]/Sent Mail
+[2026-01-27T14:28:11.767Z] [support@veriemails.com] Found 4 messages in [Gmail]/Sent Mail, syncing last 200
+[2026-01-27T14:28:11.852Z] [keithburtb2bleads@gmail.com] Folder [Gmail]/Drafts is empty
+[2026-01-27T14:28:11.853Z] [keithburtb2bleads@gmail.com] Processing folder: [Gmail]/Spam
+[2026-01-27T14:28:12.966Z] [support@veriemails.com] Folder [Gmail]/Sent Mail: 4 synced, 0 failed
+[2026-01-27T14:28:12.968Z] [support@veriemails.com] Processing folder: [Gmail]/Drafts
+[2026-01-27T14:28:13.511Z] [keithburtb2bleads@gmail.com] Found 3 messages in [Gmail]/Spam, syncing last 200
+[2026-01-27T14:28:13.840Z] [support@veriemails.com] Folder [Gmail]/Drafts is empty
+[2026-01-27T14:28:13.842Z] [support@veriemails.com] Processing folder: [Gmail]/Spam
+[2026-01-27T14:28:14.745Z] [support@veriemails.com] Folder [Gmail]/Spam is empty
+[2026-01-27T14:28:14.746Z] [support@veriemails.com] Processing folder: [Gmail]/Trash
+[2026-01-27T14:28:15.442Z] [keithburtb2bleads@gmail.com] Folder [Gmail]/Spam: 3 synced, 0 failed
+[2026-01-27T14:28:15.444Z] [keithburtb2bleads@gmail.com] Processing folder: [Gmail]/Trash
+[2026-01-27T14:28:15.617Z] [support@veriemails.com] Folder [Gmail]/Trash is empty
+[2026-01-27T14:28:15.617Z] [support@veriemails.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:28:15.904Z] [support@veriemails.com] IMAP connection closed
+[2026-01-27T14:28:15.907Z] [support@veriemails.com] IMAP client logged out
+[2026-01-27T14:28:16.370Z] [SYSTEM] 🚀 Starting bulk IMAP sync for all accounts
+[2026-01-27T14:28:16.377Z] [SYSTEM] Found 6 verified account(s)
+[2026-01-27T14:28:16.379Z] [keithburtb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:28:16.381Z] [lucasb2bleads@gmail.com] 🔄 Starting IMAP sync
+[2026-01-27T14:28:16.387Z] [lucasb2bleads@gmail.com] Connecting to IMAP server...
+[2026-01-27T14:28:16.390Z] [henrymikeb2bleads@gmail.com] Sync already in progress, skipping
+[2026-01-27T14:28:16.391Z] [Grace_Walker@expomedialeads.com] Sync already in progress, skipping
+[2026-01-27T14:28:16.392Z] [mia.mitchell@connectexpoleads.com] 🔄 Starting IMAP sync
+[2026-01-27T14:28:16.393Z] [mia.mitchell@connectexpoleads.com] Connecting to IMAP server...
+[2026-01-27T14:28:16.909Z] [keithburtb2bleads@gmail.com] Folder [Gmail]/Trash is empty
+[2026-01-27T14:28:16.911Z] [keithburtb2bleads@gmail.com] ✅ IMAP sync completed successfully
+[2026-01-27T14:28:17.087Z] [mia.mitchell@connectexpoleads.com] ✅ Connected to IMAP server
+[2026-01-27T14:28:17.127Z] [mia.mitchell@connectexpoleads.com] Detected folder: INBOX → inbox
+[2026-01-27T14:28:17.128Z] [mia.mitchell@connectexpoleads.com] Detected folder: Sent → sent
+[2026-01-27T14:28:17.129Z] [mia.mitchell@connectexpoleads.com] Detected folder: Drafts → drafts
+[2026-01-27T14:28:17.130Z] [mia.mitchell@connectexpoleads.com] Detected folder: Junk → spam
+[2026-01-27T14:28:17.131Z] [mia.mitchell@connectexpoleads.com] Detected folder: Trash → trash
+[2026-01-27T14:28:17.132Z] [mia.mitchell@connectexpoleads.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:28:17.133Z] [mia.mitchell@connectexpoleads.com] Processing folder: INBOX
+[2026-01-27T14:28:17.267Z] [keithburtb2bleads@gmail.com] IMAP connection closed
+[2026-01-27T14:28:17.268Z] [keithburtb2bleads@gmail.com] IMAP client logged out
+[2026-01-27T14:28:17.269Z] [SYSTEM] ✅ Bulk sync complete: 6 successful, 0 failed
+[2026-01-27T14:28:19.105Z] [lucasb2bleads@gmail.com] ✅ Connected to IMAP server
+[2026-01-27T14:28:19.710Z] [lucasb2bleads@gmail.com] Detected folder: INBOX → inbox
+[2026-01-27T14:28:19.712Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:28:19.714Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:28:19.715Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:28:19.717Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:28:19.718Z] [lucasb2bleads@gmail.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:28:19.719Z] [lucasb2bleads@gmail.com] Processing folder: INBOX
+[2026-01-27T14:28:20.646Z] [lucasb2bleads@gmail.com] Found 2082 messages in INBOX, syncing last 200
+[2026-01-27T14:28:22.312Z] [mia.mitchell@connectexpoleads.com] Found 10 messages in INBOX, syncing last 200
+[2026-01-27T14:28:23.107Z] [mia.mitchell@connectexpoleads.com] Folder INBOX: 10 synced, 0 failed
+[2026-01-27T14:28:23.108Z] [mia.mitchell@connectexpoleads.com] Processing folder: Sent
+[2026-01-27T14:29:29.034Z] [SYSTEM] 🚀 Starting bulk IMAP sync for all accounts
+[2026-01-27T14:29:29.109Z] [SYSTEM] Found 6 verified account(s)
+[2026-01-27T14:29:29.111Z] [keithburtb2bleads@gmail.com] 🔄 Starting IMAP sync
+[2026-01-27T14:29:29.118Z] [keithburtb2bleads@gmail.com] Connecting to IMAP server...
+[2026-01-27T14:29:29.171Z] [lucasb2bleads@gmail.com] 🔄 Starting IMAP sync
+[2026-01-27T14:29:29.174Z] [lucasb2bleads@gmail.com] Connecting to IMAP server...
+[2026-01-27T14:29:32.055Z] [lucasb2bleads@gmail.com] ✅ Connected to IMAP server
+[2026-01-27T14:29:32.366Z] [keithburtb2bleads@gmail.com] ✅ Connected to IMAP server
+[2026-01-27T14:29:32.683Z] [lucasb2bleads@gmail.com] Detected folder: INBOX → inbox
+[2026-01-27T14:29:32.684Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:29:32.684Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:29:32.685Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:29:32.686Z] [lucasb2bleads@gmail.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:29:32.687Z] [lucasb2bleads@gmail.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:29:32.687Z] [lucasb2bleads@gmail.com] Processing folder: INBOX
+[2026-01-27T14:29:33.419Z] [keithburtb2bleads@gmail.com] Detected folder: INBOX → inbox
+[2026-01-27T14:29:33.421Z] [keithburtb2bleads@gmail.com] Detected folder: [Gmail]/Sent Mail → sent
+[2026-01-27T14:29:33.423Z] [keithburtb2bleads@gmail.com] Detected folder: [Gmail]/Drafts → drafts
+[2026-01-27T14:29:33.424Z] [keithburtb2bleads@gmail.com] Detected folder: [Gmail]/Spam → spam
+[2026-01-27T14:29:33.425Z] [keithburtb2bleads@gmail.com] Detected folder: [Gmail]/Trash → trash
+[2026-01-27T14:29:33.427Z] [keithburtb2bleads@gmail.com] 📂 Processing 5 folder(s)
+[2026-01-27T14:29:33.430Z] [keithburtb2bleads@gmail.com] Processing folder: INBOX
+[2026-01-27T14:29:33.705Z] [lucasb2bleads@gmail.com] Found 2082 messages in INBOX, syncing last 200
+[2026-01-27T14:29:34.732Z] [keithburtb2bleads@gmail.com] Found 973 messages in INBOX, syncing last 200
