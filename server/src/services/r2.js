@@ -11,7 +11,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const R2_ENDPOINT = process.env.R2_ENDPOINT;
-const R2_BUCKET = process.env.R2_BUCKET_NAME;
+const R2_BUCKET = process.env.R2_BUCKET;
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
 
 // Create R2 client
