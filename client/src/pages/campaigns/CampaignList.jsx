@@ -21,6 +21,7 @@ import {
 import CreateCampaign from "./campaignPages/CreateCampaign";
 import CampaignDetail from "./campaignPages/CampaignDetail";
 import { api } from "../utils/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function CampaignList() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -88,7 +89,7 @@ const CampaignProgress = ({ campaignId }) => {
 
   const fetchProgress = async () => {
     try {
-      const res = await api.get(`/api/campaigns/${campaignId}/progress`);
+      const res = await api.get(`${API_BASE_URL}/api/campaigns/${campaignId}/progress`);
       if (res.data.success) setRows(res.data.data);
     } catch (error) {
       console.error("Failed to fetch progress:", error);
@@ -165,7 +166,7 @@ const calculateTiming = async () => {
     
     if (pendingCount > 0 && startTime) {
       try {
-        const res = await api.get(`/api/campaigns/${campaign.id}/progress`);
+        const res = await api.get(`${API_BASE_URL}/api/campaigns/${campaign.id}/progress`);
         if (res.data.success) {
           const progressRows = res.data.data;
           
@@ -372,7 +373,7 @@ const DashboardTab = () => {
       // Add timestamp to prevent caching
       params._t = Date.now();
 
-      const response = await api.get("/api/campaigns/dashboard", { params });
+      const response = await api.get(`${API_BASE_URL}/api/campaigns/dashboard`, { params });
 
       if (response.data.success) {
         const { stats, recentCampaigns } = response.data.data;
@@ -398,7 +399,7 @@ const DashboardTab = () => {
 
     try {
       setDeleting(campaignId);
-      await api.delete(`/api/campaigns/${campaignId}`);
+      await api.delete(`${API_BASE_URL}/api/campaigns/${campaignId}`);
       
       // Immediate UI update
       setCampaigns(prev => prev.filter(c => c.id !== campaignId));

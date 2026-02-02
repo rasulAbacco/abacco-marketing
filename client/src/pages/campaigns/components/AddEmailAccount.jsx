@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { api } from "../../utils/api"; 
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function AddAccountManager({ onClose, onAccountAdded }) {
@@ -44,7 +45,7 @@ const fetchAccounts = async () => {
   setError(null);
 
   try {
-    const res = await api.get("/api/accounts");
+    const res = await api.get(`${API_BASE_URL}/api/accounts`);
 
     if (res.data?.success && Array.isArray(res.data.data)) {
       setAccounts(res.data.data);
@@ -82,7 +83,7 @@ const addAccount = async (e) => {
 
     console.log("Sending:", formData); // 🔥 debug
 
-    const res = await api.post("/api/accounts", formData);
+    const res = await api.post(`${API_BASE_URL}/api/accounts`, formData);
 
     console.log("Success:", res.data);
 
@@ -100,7 +101,7 @@ const addAccount = async (e) => {
   const updateSenderName = async (accountId, newName) => {
     try {
       const res = await api.patch(
-        `/api/accounts/${accountId}/sender-name`,
+        `${API_BASE_URL}/api/accounts/${accountId}/sender-name`,
         {
           senderName: newName.trim(),
         }
@@ -135,7 +136,7 @@ const logoutAccount = async () => {
     const token = localStorage.getItem("token");
 
     // ✅ Only call the real backend route
-    await api.delete(`/api/accounts/${accountToLogout}`, {
+    await api.delete(`${API_BASE_URL}/api/accounts/${accountToLogout}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -632,153 +633,4 @@ const logoutAccount = async () => {
   );
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import { useState } from "react";
-
-// export default function AddEmailAccountModal({ onClose, onSuccess }) {
-//   const [form, setForm] = useState({
-//     provider: "Gmail",
-//     email: "",
-//     imapHost: "",
-//     imapPort: "",
-//     smtpHost: "",
-//     smtpPort: "",
-//     username: "",
-//     password: "",
-//   });
-
-//   const [loading, setLoading] = useState(false);
-//   const [message, setMessage] = useState("");
-
-//   const handleChange = (e) => {
-//     setForm({ ...form, [e.target.name]: e.target.value });
-//   };
-
-//   const handleSubmit = async () => {
-//     setLoading(true);
-//     setMessage("");
-
-//     try {
-//       const res = await fetch("http://localhost:5000/api/email/add", {
-//         method: "POST",
-//         headers: { "Content-Type": "application/json" },
-//         body: JSON.stringify(form),
-//       });
-
-//       const data = await res.json();
-
-//       if (!res.ok) throw new Error(data.error || "Failed to add");
-
-//       setMessage("✅ Account added successfully");
-
-//       setForm({
-//         provider: "Gmail",
-//         email: "",
-//         imapHost: "",
-//         imapPort: "",
-//         smtpHost: "",
-//         smtpPort: "",
-//         username: "",
-//         password: "",
-//       });
-
-//       onSuccess?.(); // refresh list outside
-//     } catch (err) {
-//       setMessage("❌ " + err.message);
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   return (
-//     <div className="fixed inset-0 z-50 bg-black/30 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-//       <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-xl border border-slate-200 dark:border-slate-800 p-6 relative shadow-xl">
-
-//         <button onClick={onClose} className="absolute top-4 right-4 text-xl">✕</button>
-
-//         <h1 className="text-2xl font-semibold">Add Email Account</h1>
-
-//         <div className="space-y-5 mt-4">
-
-//           <Select label="Provider" name="provider" value={form.provider} onChange={handleChange}
-//             options={["Gmail", "Outlook", "Yahoo", "Custom IMAP"]} />
-
-//           <Input label="Email Address" name="email" value={form.email} onChange={handleChange} />
-//           <Input label="Username" name="username" value={form.username} onChange={handleChange} />
-
-//           <div className="grid grid-cols-2 gap-4">
-//             <Input label="IMAP Host" name="imapHost" value={form.imapHost} onChange={handleChange} />
-//             <Input label="IMAP Port" name="imapPort" value={form.imapPort} onChange={handleChange} />
-//           </div>
-
-//           <div className="grid grid-cols-2 gap-4">
-//             <Input label="SMTP Host" name="smtpHost" value={form.smtpHost} onChange={handleChange} />
-//             <Input label="SMTP Port" name="smtpPort" value={form.smtpPort} onChange={handleChange} />
-//           </div>
-
-//           <Input label="App Password" name="password" type="password" value={form.password} onChange={handleChange} />
-
-//           {message && (
-//             <p className="text-sm text-center text-slate-600 dark:text-slate-300">{message}</p>
-//           )}
-
-//           <button
-//             onClick={handleSubmit}
-//             disabled={loading}
-//             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium"
-//           >
-//             {loading ? "Saving..." : "Add Account"}
-//           </button>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// }
-
-// /* Components */
-
-// const Input = ({ label, ...props }) => (
-//   <div>
-//     <label className="text-sm">{label}</label>
-//     <input {...props} className="w-full mt-1 border rounded-lg px-4 py-2" />
-//   </div>
-// );
-
-// const Select = ({ label, options, ...props }) => (
-//   <div>
-//     <label className="text-sm">{label}</label>
-//     <select {...props} className="w-full mt-1 border rounded-lg px-4 py-2">
-//       {options.map((o) => (
-//         <option key={o}>{o}</option>
-//       ))}
-//     </select>
-//   </div>
-// );
+ 

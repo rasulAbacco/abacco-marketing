@@ -23,6 +23,8 @@ import {
   Lock,
   CheckCircle2
 } from "lucide-react";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
 
 const FONT_FAMILIES = [
   { value: "Calibri, sans-serif", label: "Calibri" },
@@ -172,7 +174,7 @@ const sizeMap = {
         try {
           const token = localStorage.getItem("token");
 
-          const res = await fetch("http://localhost:5000/api/campaigns/accounts/locked", {
+          const res = await fetch(`${API_BASE_URL}/api/campaigns/accounts/locked`, {
             headers: {
               Authorization: `Bearer ${token}`,
             },
@@ -212,7 +214,7 @@ const sizeMap = {
     const fetchAccounts = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:5000/api/accounts", {
+        const res = await fetch(`${API_BASE_URL}/api/accounts`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -231,7 +233,7 @@ const sizeMap = {
     const fetchPitches = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:5000/api/pitches", {
+        const res = await fetch(`${API_BASE_URL}/api/pitches`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -251,7 +253,7 @@ const sizeMap = {
     const fetchCampaigns = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:5000/api/campaigns", {
+        const res = await fetch(`${API_BASE_URL}/api/campaigns`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -301,7 +303,7 @@ const sizeMap = {
       setSending(true);
 
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:5000/api/campaigns", {
+      const res = await fetch(`${API_BASE_URL}/api/campaigns`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -326,7 +328,7 @@ const sizeMap = {
       }
 
       if (campaignType === "immediate") {
-        const sendRes = await fetch(`http://localhost:5000/api/campaigns/${data.data.id}/send`, {
+        const sendRes = await fetch(`${API_BASE_URL}/api/campaigns/${data.data.id}/send`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -381,7 +383,7 @@ const sizeMap = {
 
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:5000/api/pitches/${pitchId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/pitches/${pitchId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

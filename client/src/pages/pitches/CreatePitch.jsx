@@ -19,6 +19,8 @@ import {
   Save,
 } from "lucide-react";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
 const FONT_FAMILIES = [
   // Sans-serif (modern UI fonts)
   { value: "Calibri, sans-serif", label: "Calibri" },
@@ -147,8 +149,8 @@ export default function CreatePitch({ pitch, onSaved }) {
     const token = localStorage.getItem("token");
 
     const url = pitch
-      ? `http://localhost:5000/api/pitches/${pitch.id}`
-      : `http://localhost:5000/api/pitches`;
+      ? `${API_BASE_URL}/api/pitches/${pitch.id}`
+      : `${API_BASE_URL}/api/pitches`;
 
     const method = pitch ? "PUT" : "POST";
 

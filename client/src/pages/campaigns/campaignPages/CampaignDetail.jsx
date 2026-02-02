@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Send, Plus, Trash2, Eye } from "lucide-react";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
 // ------------------------------
 // Local lightweight UI components
 // (no shadcn / @ alias needed)
@@ -62,7 +64,7 @@ export default function CampaignDetail() {
   // Fetch campaigns
   // ------------------------------
   useEffect(() => {
-    fetch("http://localhost:5000/api/campaigns", {
+    fetch(`${API_BASE_URL}/api/campaigns`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`,
       },
@@ -91,7 +93,7 @@ export default function CampaignDetail() {
   }, []);
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/accounts", {
+    fetch(`${API_BASE_URL}/api/accounts`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`,
       },
@@ -113,7 +115,7 @@ useEffect(() => {
   const fetchPitches = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:5000/api/pitches", {
+      const res = await fetch(`${API_BASE_URL}/api/pitches`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -205,7 +207,7 @@ const createFollowUp = async () => {
       senderRecipientMap[accountId].push(r.email);
     });
 
-    const res = await fetch("http://localhost:5000/api/campaigns/followup", {
+    const res = await fetch(`${API_BASE_URL}/api/campaigns/followup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -253,7 +255,7 @@ const createFollowUp = async () => {
     setSaveMsg("");
 
     const res = await fetch(
-      `http://localhost:5000/api/campaigns/${loadedCampaign.id}/followup-body`,
+      `${API_BASE_URL}/api/campaigns/${loadedCampaign.id}/followup-body`,
       {
         method: "PUT",
         headers: {

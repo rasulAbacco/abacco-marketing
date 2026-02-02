@@ -16,6 +16,7 @@ export default function PitchList() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pitchToDelete, setPitchToDelete] = useState(null);
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const handleDelete = (pitch) => {
     setPitchToDelete(pitch);
@@ -28,7 +29,7 @@ export default function PitchList() {
     try {
       const token = localStorage.getItem("token");
 
-      await fetch(`http://localhost:5000/api/pitches/${pitchToDelete.id}`, {
+      await fetch(`${API_BASE_URL}/api/pitches/${pitchToDelete.id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -57,7 +58,7 @@ export default function PitchList() {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch("http://localhost:5000/api/pitches", {
+      const res = await fetch(`${API_BASE_URL}/api/pitches`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
