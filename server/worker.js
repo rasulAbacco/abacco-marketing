@@ -5,6 +5,8 @@ import { startCampaignScheduler } from "./src/utils/campaignScheduler.js";
 
 console.log("🟢 Worker running");
 
+let schedulerStarted = false;
+
 // IMAP sync every 1 minute
 setInterval(() => {
   runSync(prisma).catch((err) =>
@@ -12,5 +14,8 @@ setInterval(() => {
   );
 }, 60 * 1000);
 
-// Campaign scheduler (Immediate + Scheduled)
-startCampaignScheduler();
+// Start campaign scheduler ONLY once
+if (!schedulerStarted) {
+  startCampaignScheduler();
+  schedulerStarted = true;
+}
