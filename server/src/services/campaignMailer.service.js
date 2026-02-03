@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import prisma from "../prismaClient.js";
 import { decrypt } from "../utils/crypto.js";
+import cache from "../utils/cache.js";
 /* ------------------ helpers ------------------ */
 
 function shuffle(arr) {
@@ -116,17 +117,28 @@ function getDomainLabel(email = "") {
   return domain.split(".")[0] || "client";
 }
 
-
-/* ------------------ main sender with continuous sending ------------------ */
-
 export async function sendBulkCampaign(campaignId) {
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
     include: { recipients: true },
   });
 
-  if (!campaign) throw new Error("Campaign not found");
+  if (campaign.status !== "sending") {
+    console.log("⏭️ Campaign already handled:", campaignId);
+    return;
+  }
+  console.log("📦 Campaign loaded:", {
+    id: campaign?.id,
+    status: campaign?.status,
+    sendType: campaign?.sendType,
+    recipients: campaign?.recipients?.length
+  });
 
+  if (!campaign) throw new Error("Campaign not found");
+  await prisma.campaign.update({
+    where: { id: campaignId },
+    data: { status: "sending" }
+  });
   // 🔥 Load custom limits if they exist
   let customLimits = {};
   if (campaign.customLimits) {
@@ -314,21 +326,16 @@ export async function sendBulkCampaign(campaignId) {
         } catch (err) {
           console.error(`❌ Failed to send to ${recipient.email}:`, err.message);
 
-          // mark recipient failed
           await prisma.campaignRecipient.update({
             where: { id: recipient.id },
             data: { status: "failed", error: err.message }
           });
 
-          // ⛔ IMPORTANT: pause campaign
-          await prisma.campaign.update({
-            where: { id: campaignId },
-            data: { status: "paused" }
-          });
-
-          console.log("Campaign paused due to error:", err.message);
-
-          return; // stop sending safely
+          console.log("Campaign stopping due to error:", err.message);
+          
+          // 🔥 FIX: Ensure status is updated before exiting
+          await updateCampaignStatus(campaignId); 
+          return; 
         }
       }
     }
@@ -469,14 +476,11 @@ export async function sendBulkCampaign(campaignId) {
           data: { status: "failed", error: err.message }
         });
 
-        await prisma.campaign.update({
-          where: { id: campaignId },
-          data: { status: "paused" }
-        });
-
-        console.log("Campaign paused due to error:", err.message);
-
-        return;
+        console.log("Campaign stopping due to error:", err.message);
+        
+        // 🔥 FIX: Ensure status is updated before exiting
+        await updateCampaignStatus(campaignId); 
+        return; 
       }
 
     }
@@ -508,20 +512,44 @@ async function updateCampaignStatus(campaignId) {
 
   let finalStatus = "completed";
 
-  if (counts.sent === 0 && counts.failed > 0) {
+  if (counts.pending > 0) {
+    finalStatus = "sending";
+  }
+  else if (counts.sent === 0 && counts.failed > 0) {
     finalStatus = "failed";
   }
   else if (counts.sent > 0 && counts.failed > 0) {
     finalStatus = "completed_with_errors";
   }
-  else if (counts.pending > 0) {
-    finalStatus = "sending";
-  }
+
+  // Get campaign to find userId for cache invalidation
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: { userId: true }
+  });
 
   await prisma.campaign.update({
     where: { id: campaignId },
     data: { status: finalStatus },
   });
+
+  // 🔥 Invalidate dashboard cache immediately when status changes
+  if (campaign?.userId) {
+    const ranges = ['today', 'week', 'month'];
+    ranges.forEach(range => {
+      cache.del(`dashboard:${campaign.userId}:${range}`);
+    });
+    
+    // Clear date-specific caches
+    const keys = cache.keys();
+    keys.forEach(key => {
+      if (key.startsWith(`dashboard:${campaign.userId}:`)) {
+        cache.del(key);
+      }
+    });
+    
+    console.log(`🔥 Cache invalidated for user ${campaign.userId}`);
+  }
 
   console.log(`Campaign ${campaignId} status updated to:`, finalStatus);
 }

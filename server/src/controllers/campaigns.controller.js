@@ -193,39 +193,60 @@ export const createCampaign = async (req, res) => {
     // 5️⃣ Create campaign
     const fromIds = fromAccountIds.map(Number);
 
-    const campaign = await prisma.campaign.create({
-        data: {
-          userId: req.user.id,
-          name: finalName,
-          bodyHtml,
-          sendType,
+   const campaign = await prisma.campaign.create({
+      data: {
+        userId: req.user.id,
+        name: finalName,
+        bodyHtml,
+        sendType,
 
-          // 🔥 FIXED LINE
-          scheduledAt:
-            sendType === "immediate"
-              ? new Date()
-              : new Date(scheduledAt),
+        // ✅ scheduledAt ONLY for scheduled campaigns
+        scheduledAt:
+          sendType === "scheduled"
+            ? new Date(scheduledAt)
+            : null,
 
-          status: "scheduled",
+        // ✅ correct status lifecycle
+        status:
+          sendType === "scheduled"
+            ? "scheduled"
+            : "draft",
 
-          subject: JSON.stringify(subjects),
-          fromAccountIds: JSON.stringify(fromAccountIds),
-          pitchIds: JSON.stringify(pitchIds || []),
-          customLimits: customLimits ? JSON.stringify(customLimits) : null,
+        subject: JSON.stringify(subjects),
+        fromAccountIds: JSON.stringify(fromAccountIds),
+        pitchIds: JSON.stringify(pitchIds || []),
+        customLimits: customLimits ? JSON.stringify(customLimits) : null,
 
-          recipients: {
-            create: recipients.map((email, i) => ({
-              email,
-              status: "pending",
-              accountId: fromIds[i % fromIds.length],
-            })),
-          },
+        recipients: {
+          create: recipients.map((email, i) => ({
+            email,
+            status: "pending",
+            accountId: fromIds[i % fromIds.length],
+          })),
         },
+      },
     });
 
+    // ✅ Proper handling for immediate campaigns
+    if (campaign.sendType === "immediate") {
+      // Mark as sending
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: "sending" }
+      });
 
-    // 🔥 INVALIDATE CACHE after creating campaign
-    invalidateDashboardCache(req.user.id);
+      // Invalidate cache
+      invalidateDashboardCache(req.user.id);
+
+      // Fire-and-forget (ONLY ONCE)
+      sendBulkCampaign(campaign.id).catch(err => {
+        console.error(`Error in immediate campaign ${campaign.id}:`, err);
+      });
+    } else {
+      invalidateDashboardCache(req.user.id);
+    }
+
+
 
     return res.json({
       success: true,
@@ -259,19 +280,24 @@ export const sendCampaignNow = async (req, res) => {
       });
     }
 
-    // ❌ Already sending
-    if (campaign.status === "sending") {
-      return res.status(400).json({
-        success: false,
-        message: "Campaign is already sending"
-      });
+    if (!campaign || campaign.status === "sent") {
+      return;
     }
+
 
     // 🔒 LOCK CHECK (same as before)
     const activeCampaigns = await prisma.campaign.findMany({
       where: {
         status: "sending",
         NOT: { id: campaignId }
+      }
+    });
+
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        status: "sent",
+        sentAt: new Date()
       }
     });
 
@@ -294,25 +320,27 @@ export const sendCampaignNow = async (req, res) => {
       });
     }
 
-    // ✅ KEY FIX: Queue as scheduled = NOW
+    // 🔥 Update status to sending
     await prisma.campaign.update({
       where: { id: campaignId },
-      data: {
-        status: "scheduled",
-        scheduledAt: new Date()
-      }
+      data: { status: "sending" }
     });
 
-    // 🔥 Invalidate dashboard cache
+    // 🔥 INVALIDATE CACHE before sending
     invalidateDashboardCache(campaign.userId);
+
+    // 🔥 Start sending asynchronously
+    sendBulkCampaign(campaignId).catch(err => {
+      console.error(`Error sending campaign ${campaignId}:`, err);
+    });
 
     return res.json({
       success: true,
-      message: "Campaign queued and will start immediately"
+      message: "Campaign sending started"
     });
 
   } catch (err) {
-    console.error("Send campaign error:", err);
+    console.error("sendCampaignNow error:", err);
     return res.status(500).json({
       success: false,
       message: "Failed to send campaign"
@@ -368,6 +396,9 @@ export const scheduleCampaign = async (req, res) => {
   }
 };
 
+/**
+ * Create Follow-up Campaign
+ */
 export const createFollowupCampaign = async (req, res) => {
   try {
     const { baseCampaignId, subjects, bodyHtml, senderRecipientMap } = req.body;
@@ -478,8 +509,20 @@ export const createFollowupCampaign = async (req, res) => {
       }
     }
 
+    // After creating recipients (line 510)
     await prisma.campaignRecipient.createMany({
       data: recipientCreates
+    });
+
+    // 🔥 ADD THIS: Update status to sending and trigger the send
+    await prisma.campaign.update({
+      where: { id: followupCampaign.id },
+      data: { status: "sending" }
+    });
+
+    // 🔥 ADD THIS: Trigger the sending process
+    sendBulkCampaign(followupCampaign.id).catch(err => {
+      console.error(`Error in followup campaign ${followupCampaign.id}:`, err);
     });
 
     // 🔥 INVALIDATE CACHE
@@ -499,6 +542,9 @@ export const createFollowupCampaign = async (req, res) => {
   }
 };
 
+/**
+ * Get All Campaigns
+ */
 export const getAllCampaigns = async (req, res) => {
   try {
     const campaigns = await prisma.campaign.findMany({
@@ -514,6 +560,9 @@ export const getAllCampaigns = async (req, res) => {
   }
 };
 
+/**
+ * Get Dashboard Campaigns with caching
+ */
 export const getDashboardCampaigns = async (req, res) => {
   try {
     const { range = "today", date } = req.query;
@@ -644,8 +693,8 @@ export const getDashboardCampaigns = async (req, res) => {
       recentCampaigns
     };
 
-    // 🔥 Cache for only 30 seconds for more real-time updates
-    cache.set(cacheKey, responseData, 30);
+    // 🔥 Cache for only 5 seconds for near real-time updates
+    cache.set(cacheKey, responseData, 5);
 
     return res.json({ success: true, data: responseData });
 
@@ -655,6 +704,9 @@ export const getDashboardCampaigns = async (req, res) => {
   }
 };
 
+/**
+ * Get Campaign Progress
+ */
 export const getCampaignProgress = async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -748,6 +800,9 @@ export const getCampaignProgress = async (req, res) => {
   }
 };
 
+/**
+ * Get Locked Accounts
+ */
 export const getLockedAccounts = async (req, res) => {
   try {
     // 🔥 REDUCED CACHE TIME - 10 seconds for more real-time lock status
@@ -792,6 +847,9 @@ export const getLockedAccounts = async (req, res) => {
   }
 };
 
+/**
+ * Delete Campaign
+ */
 export const deleteCampaign = async (req, res) => {
   try {
     const campaignId = Number(req.params.id);
@@ -822,5 +880,68 @@ export const deleteCampaign = async (req, res) => {
   } catch (err) {
     console.error("Delete campaign error:", err);
     res.status(500).json({ success: false });
+  }
+};
+
+export const getCampaignsForFollowup = async (req, res) => {
+  try {
+    const allCampaigns = await prisma.campaign.findMany({
+      where: {
+        userId: req.user.id,
+        OR: [
+          { sendType: "immediate" },
+          { sendType: "scheduled" }
+        ],
+        status: "completed",
+        parentCampaignId: null,
+      },
+      include: {
+        recipients: true
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    // Get all completed follow-up campaigns with their parent IDs
+    const followupCampaigns = await prisma.campaign.findMany({
+      where: {
+        userId: req.user.id,
+        sendType: "followup",
+        status: "completed",
+        parentCampaignId: { not: null }
+      },
+      select: {
+        parentCampaignId: true
+      }
+    });
+
+    // Create a set of campaign IDs that already have follow-ups
+    const campaignsWithFollowups = new Set(
+      followupCampaigns.map(f => f.parentCampaignId)
+    );
+
+    // Filter campaigns
+    const now = Date.now();
+    const hours24 = 24 * 60 * 60 * 1000;
+
+    const availableCampaigns = allCampaigns.filter(c => {
+      const completedTime = new Date(c.createdAt).getTime();
+      
+      return (
+        now - completedTime >= hours24 &&
+        !campaignsWithFollowups.has(c.id)
+      );
+    });
+
+    return res.json({
+      success: true,
+      data: availableCampaigns
+    });
+
+  } catch (err) {
+    console.error("Get campaigns for followup error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
   }
 };

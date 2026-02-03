@@ -63,34 +63,51 @@ export default function CampaignDetail() {
   // ------------------------------
   // Fetch campaigns
   // ------------------------------
-  useEffect(() => {
-    fetch(`${API_BASE_URL}/api/campaigns`, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
+useEffect(() => {
+  fetch(`${API_BASE_URL}/api/campaigns`, {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      console.log("Campaign API:", data);
+      
+      const allCampaigns = data.data || [];
+      
+      // Get IDs of campaigns that have completed follow-ups
+      const campaignsWithFollowups = new Set();
+      
+      allCampaigns.forEach(c => {
+        if (c.sendType === "followup" && c.status === "completed" && c.parentCampaignId) {
+          campaignsWithFollowups.add(c.parentCampaignId);
+        }
+      });
+      
+      // Filter campaigns that:
+      // 1. Are immediate or scheduled
+      // 2. Are completed
+      // 3. Are NOT parent campaigns (don't have parentCampaignId)
+      // 4. Are at least 24 hours old
+      // 5. DON'T already have a completed follow-up
+      const filtered = allCampaigns.filter(c => {
+        const completedTime = new Date(c.createdAt).getTime();
+        const now = Date.now();
+        const hours24 = 24 * 60 * 60 * 1000;
+
+        return (
+          (c.sendType === "immediate" || c.sendType === "scheduled") &&
+          c.status === "completed" &&
+          !c.parentCampaignId &&
+          now - completedTime >= hours24 &&
+          !campaignsWithFollowups.has(c.id)  // ✅ NEW: Exclude campaigns with completed follow-ups
+        );
+      });
+
+      setCampaigns(filtered);
     })
-      .then((res) => res.json())
-      .then((data) => {
-        console.log("Campaign API:", data);
-        const filtered = (data.data || []).filter(c => {
-          const completedTime = new Date(c.createdAt).getTime();
-          const now = Date.now();
-          const hours24 = 24 * 60 * 60 * 1000;
-
-          return (
-            (c.sendType === "immediate" || c.sendType === "scheduled") &&
-            c.status === "completed" &&
-            !c.parentCampaignId &&
-            now - completedTime >= hours24
-          );
-        });
-
-
-        setCampaigns(filtered);
-
-      })
-      .catch(console.error);
-  }, []);
+    .catch(console.error);
+}, []);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/accounts`, {
@@ -280,6 +297,20 @@ const createFollowUp = async () => {
   }
 };
 
+useEffect(() => {
+  // Option 1: Use dedicated endpoint (if you add the backend method above)
+  fetch(`${API_BASE_URL}/api/campaigns/for-followup`, {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      console.log("Campaigns available for follow-up:", data);
+      setCampaigns(data.data || []);
+    })
+    .catch(console.error);
+}, []);
 
   return (
     <div className="grid grid-cols-12 gap-6 p-6 bg-white">

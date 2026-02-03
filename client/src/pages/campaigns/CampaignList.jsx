@@ -427,36 +427,26 @@ const DashboardTab = () => {
     });
   };
 
-  const getCampaignLabel = (campaign) => {
+const getCampaignLabel = (campaign) => {
   const now = new Date();
 
-  // 🔥 IMMEDIATE CAMPAIGN
-  if (campaign.sendType === "immediate") {
-    if (["completed", "completed_with_errors", "failed"].includes(campaign.status)) {
-      return "Completed";
-    }
-    return "Immediate";
-  }
+  // If the status is explicitly 'sending', show Sending regardless of origin
+  if (campaign.status === "sending") return "Sending";
 
-  // 🔵 FUTURE SCHEDULED
   if (campaign.status === "scheduled") {
-    const scheduledTime = campaign.scheduledAt
-      ? new Date(campaign.scheduledAt)
-      : null;
-
+    const scheduledTime = campaign.scheduledAt ? new Date(campaign.scheduledAt) : null;
+    // If time hasn't reached yet, it's still Scheduled
     if (scheduledTime && scheduledTime > now) {
       return "Scheduled";
     }
-
-    return "Sending";
+    // If time passed but status hasn't flipped in DB yet, 
+    // the scheduler will catch it in the next minute.
+    return "Scheduled"; 
   }
 
-  if (campaign.status === "sending") return "Sending";
   if (campaign.status === "completed") return "Completed";
-
   return "Draft";
 };
-
 
   const manualRefresh = async () => {
     await fetchCampaigns();
@@ -488,6 +478,8 @@ const DashboardTab = () => {
       </div>
     );
   }
+
+  
 
   return (
     <div>

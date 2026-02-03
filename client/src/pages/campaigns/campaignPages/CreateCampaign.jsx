@@ -327,16 +327,16 @@ const sizeMap = {
         throw new Error(data.message || "Failed to create campaign");
       }
 
-      if (campaignType === "immediate") {
-        const sendRes = await fetch(`${API_BASE_URL}/api/campaigns/${data.data.id}/send`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const sendData = await sendRes.json();
-        if (!sendData.success) {
-          throw new Error("Campaign created but sending failed");
-        }
-      }
+      // if (campaignType === "immediate") {
+      //   const sendRes = await fetch(`${API_BASE_URL}/api/campaigns/${data.data.id}/send`, {
+      //     method: "POST",
+      //     headers: { Authorization: `Bearer ${token}` },
+      //   });
+      //   const sendData = await sendRes.json();
+      //   if (!sendData.success) {
+      //     throw new Error("Campaign created but sending failed");
+      //   }
+      // }
 
       alert(campaignType === "immediate" ? "Campaign sent successfully! It will continue sending automatically." : "Campaign scheduled successfully!");
 
