@@ -28,13 +28,12 @@ export const registerUser = async (req, res) => {
     const user = await prisma.user.create({
         data: {
             email,
-
             // ✅ Store plain password
             password: password,
-
             empId,
             name,
             jobRole,
+            isActive: true
         },
     });
 
