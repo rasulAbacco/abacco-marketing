@@ -40,15 +40,21 @@ export default function LoginPage() {
       setUserName(res.data.name || res.data.email.split('@')[0]);
       setShowSuccess(true);
       
-      // Navigate to dashboard after showing success message
       // Navigate based on user role after showing success message
       setTimeout(() => {
         // ✅ Check user role and redirect accordingly
         const userRole = res.data.jobRole;
         
-        if (userRole === "Admin" || userRole === "ADMIN") {
+        // 🔍 Debug log to see what role we got
+        console.log("User role from API:", userRole);
+        console.log("User role type:", typeof userRole);
+        
+        // ✅ Case-insensitive check for admin role
+        if (userRole && userRole.toString().toLowerCase() === "admin") {
+          console.log("Redirecting to /admin");
           window.location.href = "/admin"; // Admin users → Admin panel
         } else {
+          console.log("Redirecting to /dashboard");
           window.location.href = "/dashboard"; // Regular users → Dashboard
         }
       }, 2000);

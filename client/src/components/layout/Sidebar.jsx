@@ -31,7 +31,12 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
     const user = localStorage.getItem("user");
     if (user) {
       try {
-        setUserData(JSON.parse(user));
+        const parsedUser = JSON.parse(user);
+        setUserData(parsedUser);
+        
+        // 🔍 Debug log
+        console.log("Sidebar - User data:", parsedUser);
+        console.log("Sidebar - User role:", parsedUser.jobRole);
       } catch (error) {
         console.error("Error parsing user data:", error);
       }
@@ -44,6 +49,14 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
     const names = name.trim().split(" ");
     if (names.length === 1) return names[0].charAt(0).toUpperCase();
     return (names[0].charAt(0) + names[names.length - 1].charAt(0)).toUpperCase();
+  };
+
+  // ✅ Check if user is admin (case-insensitive)
+  const isAdmin = () => {
+    if (!userData || !userData.jobRole) return false;
+    const role = userData.jobRole.toString().toLowerCase();
+    console.log("Checking if admin - role:", role, "isAdmin:", role === "admin");
+    return role === "admin";
   };
 
   return (
@@ -95,15 +108,16 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
           </div>
 
           {/* Navigation */}
-          {/* Navigation */}
         <nav className="flex-1 overflow-y-auto">
           <div className="space-y-1.5">
-            {/* ✅ Filter menu items based on role */}
+            {/* ✅ Filter menu items based on role (case-insensitive) */}
             {navigationItems
               .filter((item) => {
-                // If user is NOT admin, hide Admin tab
-                if (item.name === "Admin" && userData?.jobRole !== "Admin") {
-                  return false;
+                // If item is Admin tab, only show to admin users
+                if (item.name === "Admin") {
+                  const shouldShow = isAdmin();
+                  console.log("Admin tab - should show:", shouldShow);
+                  return shouldShow;
                 }
                 return true;
               })
@@ -169,7 +183,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
                   {userData?.name || "User"}
                 </p>
                 <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                  {userData?.email || "user@abacco.com"}
+                  {userData?.jobRole || "Role"} • {userData?.email || "user@abacco.com"}
                 </p>
               </div>
             </div>

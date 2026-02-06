@@ -52,6 +52,7 @@ export const registerUser = async (req, res) => {
         };
 
 
+
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -64,16 +65,26 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
-    // 🔍 Add debugging to see what we're getting
+    // 🔍 DEBUG: Log the isActive value to see what we're getting
+    console.log("===== LOGIN DEBUG =====");
+    console.log("Email:", email);
     console.log("User isActive value:", user.isActive);
     console.log("Type of isActive:", typeof user.isActive);
+    console.log("Strict comparison (=== true):", user.isActive === true);
+    console.log("Loose comparison (== true):", user.isActive == true);
+    console.log("Boolean conversion:", Boolean(user.isActive));
+    console.log("======================");
 
-    // ✅ More robust check for inactive users
-    if (user.isActive === false || user.isActive === 0 || user.isActive === "false") {
+    // ✅ More robust check - only block if explicitly false
+    // This accepts: true, 1, "true", "1" and only blocks: false, 0, "false", "0", null, undefined
+    if (user.isActive === false || user.isActive === 0 || user.isActive === "false" || user.isActive === "0" || !user.isActive) {
+      console.log("❌ User blocked: isActive check failed");
       return res.status(403).json({
         error: "Your account is inactive. Please contact admin.",
       });
     }
+
+    console.log("✅ User passed isActive check");
 
     // ✅ Password check (plain or bcrypt)
     const isMatch = password === user.password;
@@ -98,6 +109,7 @@ export const loginUser = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+
 
 export const getAllUsers = async (req, res) => {
   try {
