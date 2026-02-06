@@ -1,7 +1,7 @@
 // src/controllers/userController.js
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import prisma from "../prismaClient.js";
+import prisma from "../prisma.js";
 
 
 const generateToken = (id) => {
@@ -52,7 +52,6 @@ export const registerUser = async (req, res) => {
         };
 
 
-
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -65,8 +64,12 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
-    // ✅ Block inactive users
-    if (!user.isActive) {
+    // 🔍 Add debugging to see what we're getting
+    console.log("User isActive value:", user.isActive);
+    console.log("Type of isActive:", typeof user.isActive);
+
+    // ✅ More robust check for inactive users
+    if (user.isActive === false || user.isActive === 0 || user.isActive === "false") {
       return res.status(403).json({
         error: "Your account is inactive. Please contact admin.",
       });
@@ -91,10 +94,10 @@ export const loginUser = async (req, res) => {
       message: "Login successful",
     });
   } catch (err) {
+    console.error("Login error:", err);
     res.status(500).json({ error: "Server error" });
   }
 };
-
 
 export const getAllUsers = async (req, res) => {
   try {
