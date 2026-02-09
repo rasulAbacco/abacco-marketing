@@ -714,14 +714,15 @@ export const getCampaignProgress = async (req, res) => {
     const campaign = await prisma.campaign.findUnique({
       where: { id },
       include: {
-        recipients: true
-      }
+        recipients: true,
+      },
     });
 
     if (!campaign) {
       return res.status(404).json({ success: false });
     }
 
+    // ✅ Parse custom limits if available
     let customLimits = {};
     if (campaign.customLimits) {
       try {
@@ -729,12 +730,13 @@ export const getCampaignProgress = async (req, res) => {
       } catch {}
     }
 
+    // ✅ SAFE LIMITS
     const SAFE_LIMITS = {
       gmail: 50,
       gsuite: 80,
       rediff: 40,
       amazon: 60,
-      custom: 60
+      custom: 60,
     };
 
     function formatDuration(ms) {
@@ -745,15 +747,33 @@ export const getCampaignProgress = async (req, res) => {
       return `${m}m`;
     }
 
+    // ✅ Step 1: Get all unique accountIds (ONE TIME)
+    const accountIds = [
+      ...new Set(
+        campaign.recipients
+          .map((r) => r.accountId)
+          .filter(Boolean)
+      ),
+    ];
+
+    // ✅ Step 2: Fetch all accounts in ONE query (FAST)
+    const accounts = await prisma.emailAccount.findMany({
+      where: { id: { in: accountIds } },
+    });
+
+    // ✅ Step 3: Create Map for quick lookup
+    const accountMap = {};
+    accounts.forEach((acc) => {
+      accountMap[acc.id] = acc;
+    });
+
+    // ✅ Step 4: Group progress by account
     const grouped = {};
 
     for (const r of campaign.recipients) {
       if (!r.accountId) continue;
 
-      const account = await prisma.emailAccount.findUnique({
-        where: { id: r.accountId }
-      });
-
+      const account = accountMap[r.accountId];
       if (!account) continue;
 
       const key = account.email;
@@ -764,7 +784,7 @@ export const getCampaignProgress = async (req, res) => {
           domain: account.provider,
           processing: 0,
           completed: 0,
-          eta: "0m"
+          eta: "0m",
         };
       }
 
@@ -772,18 +792,16 @@ export const getCampaignProgress = async (req, res) => {
       if (r.status === "sent") grouped[key].completed++;
     }
 
-    // Calculate ETA for each account
+    // ✅ Step 5: Calculate ETA
     for (const row of Object.values(grouped)) {
       const provider = (row.domain || "custom").toLowerCase();
-      
+
       let limit = SAFE_LIMITS[provider] || SAFE_LIMITS.custom;
-      
-      const account = await prisma.emailAccount.findFirst({
-        where: { email: row.email }
-      });
-      
-      if (account && customLimits[account.id]) {
-        limit = customLimits[account.id];
+
+      const acc = accounts.find((a) => a.email === row.email);
+
+      if (acc && customLimits[acc.id]) {
+        limit = customLimits[acc.id];
       }
 
       const delayPerMail = (60 * 60 * 1000) / limit;
@@ -792,11 +810,15 @@ export const getCampaignProgress = async (req, res) => {
       row.eta = formatDuration(remainingMs);
     }
 
-    res.json({ success: true, data: Object.values(grouped) });
+    // ✅ Return Fast Response
+    return res.json({
+      success: true,
+      data: Object.values(grouped),
+    });
 
   } catch (err) {
     console.error("Progress API error:", err);
-    res.status(500).json({ success: false });
+    return res.status(500).json({ success: false });
   }
 };
 
