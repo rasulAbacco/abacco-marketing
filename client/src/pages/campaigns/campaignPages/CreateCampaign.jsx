@@ -1,3 +1,4 @@
+// client/src/pages/campaigns/campaignPages/CreateCampaign.jsx
 import { useState, useRef, useEffect } from "react";
 import {
   Send,
@@ -708,38 +709,44 @@ const lockedAccountsCount = lockedAccountsList.length;
                 <ChevronDown size={18} className={`text-emerald-600 transition-transform ${showPitchDropdown ? 'rotate-180' : ''}`} />
               </button>
 
-              {showPitchDropdown && (
-                <div className="absolute z-50 mt-2 w-full bg-white/95 backdrop-blur-sm border border-emerald-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
-                  <div className="p-3 space-y-1">
-                    {pitches.map(pitch => (
-                      <label
-                        key={pitch.id}
-                        className="flex items-center gap-3 p-3 hover:bg-emerald-50 rounded-lg cursor-pointer transition"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedPitchIds.includes(pitch.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedPitchIds([...selectedPitchIds, pitch.id]);
-                              if (editorRef.current) {
-                                editorRef.current.innerHTML = pitch.bodyHtml || "";
+             {showPitchDropdown && (
+                  <div className="absolute z-[9999] mt-2 w-full bg-white border border-emerald-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
+                    <div className="p-3 space-y-1">
+                      {pitches.map((pitch) => (
+                        <label
+                          key={pitch.id}
+                          className="flex items-center gap-3 p-3 hover:bg-emerald-50 rounded-lg cursor-pointer transition"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedPitchIds.includes(pitch.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedPitchIds([...selectedPitchIds, pitch.id]);
+                                if (editorRef.current) {
+                                  editorRef.current.innerHTML = pitch.bodyHtml || "";
+                                }
+                              } else {
+                                setSelectedPitchIds(
+                                  selectedPitchIds.filter((id) => id !== pitch.id)
+                                );
                               }
-                            } else {
-                              setSelectedPitchIds(selectedPitchIds.filter(id => id !== pitch.id));
-                            }
-                          }}
-                          className="w-4 h-4 text-emerald-600 border-emerald-300 rounded focus:ring-emerald-500"
-                        />
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{pitch.name}</p>
-                          <p className="text-xs text-emerald-600">Click to load template</p>
-                        </div>
-                      </label>
-                    ))}
+                            }}
+                          />
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {pitch.name}
+                            </p>
+                            <p className="text-xs text-emerald-600">
+                              Click to load template
+                            </p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+
             </div>
 
             
