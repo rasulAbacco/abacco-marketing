@@ -2,11 +2,30 @@ import prisma from "../prisma.js";
 
 export const getTodayCampaignReport = async (req, res) => {
   try {
+    // ✅ Get userId from authenticated request
     const userId = req.user?.id;
 
+    // 🔍 Enhanced debugging
+    console.log("====== TODAY CAMPAIGN REPORT REQUEST ======");
+    console.log("req.user:", req.user);
+    console.log("User ID from token:", userId);
+    console.log("Request headers:", req.headers.authorization);
+    console.log("==========================================");
+
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      console.error("❌ CRITICAL: No user ID found in request");
+      console.error("req.user object:", req.user);
+      return res.status(401).json({ 
+        message: "Unauthorized - No user ID found",
+        error: "Authentication token is missing or invalid. Please login again.",
+        debug: {
+          hasUser: !!req.user,
+          userId: userId
+        }
+      });
     }
+
+    console.log("✅ User authenticated, userId:", userId);
 
     // 🔹 Today start & end
     const start = new Date();
@@ -15,7 +34,14 @@ export const getTodayCampaignReport = async (req, res) => {
     const end = new Date();
     end.setHours(23, 59, 59, 999);
 
+    console.log("📅 Date range:", {
+      start: start.toISOString(),
+      end: end.toISOString()
+    });
+
     // ✅ Step 1: Fetch sent recipients today
+    console.log("🔍 Fetching sent recipients for userId:", userId);
+    
     const sentToday = await prisma.campaignRecipient.findMany({
       where: {
         status: "sent",
@@ -38,15 +64,20 @@ export const getTodayCampaignReport = async (req, res) => {
           select: {
             id: true,
             name: true,
+            userId: true, // ✅ Also select userId for debugging
           },
         },
       },
     });
 
+    console.log(`📧 Found ${sentToday.length} sent emails today for user ${userId}`);
+
     // ✅ Step 2: Fetch email accounts that sent today
     const accountIds = [
       ...new Set(sentToday.map(r => r.accountId).filter(Boolean)),
     ];
+
+    console.log(`🔑 Unique account IDs used: ${accountIds.length}`, accountIds);
 
     const accounts = await prisma.emailAccount.findMany({
       where: { id: { in: accountIds } },
@@ -54,10 +85,15 @@ export const getTodayCampaignReport = async (req, res) => {
         id: true,
         email: true,
         provider: true,
+        userId: true, // ✅ Add for debugging
       },
     });
 
-    // ✅ Step 3: Fetch today's leads FROM ALL DOMAINS (No filtering by domain)
+    console.log(`📬 Found ${accounts.length} email accounts that sent today`);
+
+    // ✅ Step 3: Fetch today's leads FROM ALL DOMAINS
+    console.log("🔍 Fetching leads for userId:", userId);
+    
     const leadsToday = await prisma.lead.findMany({
       where: {
         userId,
@@ -72,10 +108,15 @@ export const getTodayCampaignReport = async (req, res) => {
         fromEmail: true,
         toEmail: true, // The account that received the lead
         createdAt: true,
+        userId: true, // ✅ Add for debugging
       },
     });
 
-    // ✅ Step 4: Fetch ALL user's email accounts (Gmail, Amazon, Rediff, G Suite, etc.)
+    console.log(`🎯 Found ${leadsToday.length} leads today for user ${userId}`);
+
+    // ✅ Step 4: Fetch ALL user's email accounts
+    console.log("🔍 Fetching all email accounts for userId:", userId);
+    
     const allUserAccounts = await prisma.emailAccount.findMany({
       where: { 
         userId 
@@ -84,8 +125,12 @@ export const getTodayCampaignReport = async (req, res) => {
         id: true,
         email: true,
         provider: true,
+        userId: true, // ✅ Add for debugging
       },
     });
+
+    console.log(`📮 Total email accounts for user: ${allUserAccounts.length}`);
+    console.log("Account emails:", allUserAccounts.map(a => a.email));
 
     // ✅ Step 5: Create account maps
     const accountMap = {}; // By ID (for sent emails)
@@ -104,6 +149,8 @@ export const getTodayCampaignReport = async (req, res) => {
       };
     });
 
+    console.log("🗺️ Account email map keys:", Object.keys(accountEmailMap));
+
     // ✅ Step 6: Count leads per receiving account (ALL DOMAINS)
     const leadsByAccount = {};
 
@@ -114,9 +161,9 @@ export const getTodayCampaignReport = async (req, res) => {
       }
     });
 
-    console.log("🔍 Total leads today:", leadsToday.length);
-    console.log("🔍 Leads by account (ALL DOMAINS):", leadsByAccount);
-    console.log("🔍 All user accounts:", Object.keys(accountEmailMap));
+    // console.log("📊 Total leads today:", leadsToday.length);
+    // console.log("📊 Leads by account (ALL DOMAINS):", leadsByAccount);
+    // console.log("📊 All user accounts:", Object.keys(accountEmailMap));
 
     // ✅ Step 7: Build analytics groups for SENT emails
     const byEmailAccount = {};
@@ -149,7 +196,6 @@ export const getTodayCampaignReport = async (req, res) => {
     });
 
     // ✅ Step 8: Add ALL accounts that have leads (even if they didn't send today)
-    // This ensures Gmail, Amazon, Rediff, G Suite, and ANY other domain appears
     Object.keys(leadsByAccount).forEach(emailLower => {
       const accountInfo = accountEmailMap[emailLower];
       
@@ -175,9 +221,8 @@ export const getTodayCampaignReport = async (req, res) => {
       return (b.sent + b.leads) - (a.sent + a.leads);
     });
 
-    console.log("📊 Final rows (ALL DOMAINS):", rows);
 
-    return res.json({
+    const response = {
       date: start.toISOString().split("T")[0],
       totalSent: sentToday.length,
       emailAccountsUsed: rows.filter(r => r.sent > 0).length,
@@ -187,12 +232,28 @@ export const getTodayCampaignReport = async (req, res) => {
       byCampaign,
       leadsByAccount,
       rows, // Array of { email, domain, sent, leads } from ALL domains
+    };
+
+    console.log("✅ Sending response:", {
+      totalSent: response.totalSent,
+      emailAccountsUsed: response.emailAccountsUsed,
+      totalLeads: response.totalLeads,
+      rowsCount: response.rows.length
     });
+
+    return res.json(response);
+
   } catch (err) {
     console.error("❌ Today Analytics Error:", err);
+    console.error("Error stack:", err.stack);
+    console.error("Error name:", err.name);
+    console.error("Error message:", err.message);
+    
     return res.status(500).json({
       message: "Failed to load today's campaign report",
-      error: err.message
+      error: err.message,
+      errorType: err.name,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
 };

@@ -22,7 +22,6 @@ import {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const FONT_FAMILIES = [
-  // Sans-serif (modern UI fonts)
   { value: "Calibri, sans-serif", label: "Calibri" },
   { value: "Arial, sans-serif", label: "Arial" },
   { value: "Verdana, sans-serif", label: "Verdana" },
@@ -30,20 +29,30 @@ const FONT_FAMILIES = [
   { value: "'Trebuchet MS', sans-serif", label: "Trebuchet MS" },
   { value: "'Segoe UI', sans-serif", label: "Segoe UI" },
   { value: "Helvetica, sans-serif", label: "Helvetica" },
-
-  // Serif (formal / email style)
   { value: "'Times New Roman', serif", label: "Times New Roman" },
   { value: "Georgia, serif", label: "Georgia" },
   { value: "Garamond, serif", label: "Garamond" },
   { value: "'Palatino Linotype', serif", label: "Palatino" },
-
-  // Monospace (code / tech style)
   { value: "'Courier New', monospace", label: "Courier New" },
   { value: "Consolas, monospace", label: "Consolas" },
   { value: "Monaco, monospace", label: "Monaco" },
 ];
 
-const FONT_SIZES = ["10pt", "11pt", "12pt", "14pt", "16pt", "18pt", "20pt", "24pt", "28pt", "32pt", "36pt", "40pt", "48pt", "56pt"];
+// ✅ FIXED: Using px values for better email client compatibility
+const FONT_SIZES = [
+  { value: "10px", label: "10" },
+  { value: "11px", label: "11" },
+  { value: "12px", label: "12" },
+  { value: "13px", label: "13" },
+  { value: "14px", label: "14" },
+  { value: "16px", label: "16" },
+  { value: "18px", label: "18" },
+  { value: "20px", label: "20" },
+  { value: "24px", label: "24" },
+  { value: "28px", label: "28" },
+  { value: "32px", label: "32" },
+  { value: "36px", label: "36" },
+];
 
 const COLORS = [
   "#000000", "#444444", "#666666", "#999999", "#CCCCCC", "#FFFFFF",
@@ -68,8 +77,8 @@ export default function CreatePitch({ pitch, onSaved }) {
   const [pitchName, setPitchName] = useState("");
   const [showPreview, setShowPreview] = useState(false);
 
-  const [currentFont, setCurrentFont] = useState("Calibri, sans-serif");
-  const [currentSize, setCurrentSize] = useState("11pt");
+  const [currentFont, setCurrentFont] = useState("Arial, sans-serif");
+  const [currentSize, setCurrentSize] = useState("14px");
   const [currentColor, setCurrentColor] = useState("#000000");
   const [showColors, setShowColors] = useState(false);
   const [pitchType, setPitchType] = useState("fresh");
@@ -80,39 +89,66 @@ export default function CreatePitch({ pitch, onSaved }) {
     editorRef.current?.focus();
   };
 
+  // ✅ IMPROVED: Better font size application for email compatibility
   const applyFontSize = (size) => {
     setCurrentSize(size);
 
-    const sizeMap = {
-      "8pt": "1",
-      "9pt": "1",
-      "10pt": "2",
-      "11pt": "2",
-      "12pt": "3",
-      "14pt": "4",
-      "16pt": "5",
-      "18pt": "6",
-      "20pt": "6",
-      "24pt": "7",
-      "28pt": "7",
-      "32pt": "7",
-      "36pt": "7",
-      "40pt": "7",
-      "48pt": "7",
-      "56pt": "7",
-    };
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
 
-    document.execCommand("fontSize", false, sizeMap[size] || "3");
-
-    // Cleanup: convert <font size="..."> to inline style
+    const range = selection.getRangeAt(0);
+    const selectedContent = range.extractContents();
+    
+    // Create a span with inline font-size style
+    const span = document.createElement('span');
+    span.style.fontSize = size;
+    span.appendChild(selectedContent);
+    
+    range.insertNode(span);
+    
+    // Clean up: merge adjacent spans with same font size
     const editor = editorRef.current;
-    const fonts = editor.querySelectorAll("font[size]");
-    fonts.forEach(font => {
-      font.removeAttribute("size");
-      font.style.fontSize = size;
-    });
+    if (editor) {
+      normalizeSpans(editor);
+    }
 
-    editor.focus();
+    editorRef.current?.focus();
+  };
+
+  // ✅ NEW: Function to normalize and clean up span elements
+  const normalizeSpans = (element) => {
+    const spans = element.querySelectorAll('span');
+    spans.forEach(span => {
+      // Remove empty spans
+      if (!span.textContent.trim() && !span.innerHTML.trim()) {
+        span.remove();
+        return;
+      }
+
+      // If span only has font-size and no content attributes, keep it clean
+      if (span.style.length === 1 && span.style.fontSize && !span.attributes.length > 1) {
+        return;
+      }
+    });
+  };
+
+  // ✅ IMPROVED: Apply font family with better structure
+  const applyFontFamily = (fontFamily) => {
+    setCurrentFont(fontFamily);
+    
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    const selectedContent = range.extractContents();
+    
+    const span = document.createElement('span');
+    span.style.fontFamily = fontFamily;
+    span.appendChild(selectedContent);
+    
+    range.insertNode(span);
+    
+    editorRef.current?.focus();
   };
 
   useEffect(() => {
@@ -127,8 +163,21 @@ export default function CreatePitch({ pitch, onSaved }) {
     }
   }, [pitch]);
 
+  // ✅ IMPROVED: Ensure content is wrapped properly before saving
   const handleSave = async () => {
-    const html = editorRef.current?.innerHTML || "";
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    // Clean up the HTML
+    normalizeSpans(editor);
+
+    let html = editor.innerHTML || "";
+    
+    // ✅ CRITICAL: Wrap content in a div with base styling if not already wrapped
+    if (!html.trim().startsWith('<div') || !html.includes('style=')) {
+      html = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #000000;">${html}</div>`;
+    }
+
     const text = html.replace(/<[^>]*>/g, "").toLowerCase();
 
     const forbidden = [
@@ -176,7 +225,7 @@ export default function CreatePitch({ pitch, onSaved }) {
       alert(pitch ? "Pitch updated" : "Pitch created");
 
       if (onSaved) {
-        onSaved();   // refresh list + parent can close modal
+        onSaved();
       }
 
       navigate("/pitches", { replace: true });
@@ -229,7 +278,7 @@ export default function CreatePitch({ pitch, onSaved }) {
             <div className="bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 border-b border-emerald-200 dark:border-emerald-800 p-3 flex flex-wrap gap-2 items-center">
               <select
                 value={currentFont}
-                onChange={(e) => format("fontName", e.target.value)}
+                onChange={(e) => applyFontFamily(e.target.value)}
                 className="border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs px-3 py-2 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
               >
                 {FONT_FAMILIES.map(f => (
@@ -243,7 +292,7 @@ export default function CreatePitch({ pitch, onSaved }) {
                 className="border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs px-3 py-2 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
               >
                 {FONT_SIZES.map(s => (
-                  <option key={s}>{s}</option>
+                  <option key={s.value} value={s.value}>{s.label}px</option>
                 ))}
               </select>
 
@@ -302,7 +351,7 @@ export default function CreatePitch({ pitch, onSaved }) {
                 )}
               </div>
 
-              {/* Background Color (Highlight) */}
+              {/* Background Color */}
               <div className="relative">
                 <button
                   onClick={() => setShowBgColors(!showBgColors)}
@@ -337,8 +386,9 @@ export default function CreatePitch({ pitch, onSaved }) {
               suppressContentEditableWarning
               className="min-h-[300px] p-6 outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
               style={{
-                fontFamily: "Calibri, sans-serif",
-                fontSize: "11pt",
+                fontFamily: "Arial, sans-serif",
+                fontSize: "14px",
+                lineHeight: "1.6",
               }}
             />
 

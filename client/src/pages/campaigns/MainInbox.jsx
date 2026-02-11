@@ -22,11 +22,17 @@ export default function InboxMain() {
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedConversation, setSelectedConversation] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // ✅ Initialize activeView from localStorage
   const [activeView, setActiveView] = useState(() => {
     return localStorage.getItem("activeView") || "inbox";
   });
+
+    // ✅ MUST be here
+  const handleRefreshInbox = () => {
+    setRefreshKey(prev => prev + 1);
+  };
 
   // ✅ CALCULATE DEFAULT DATE (3 MONTHS AGO)
   const getDefaultDateFrom = () => {
@@ -421,6 +427,7 @@ export default function InboxMain() {
           onScheduleClick={handleSchedule}
           activeView={activeView}
           activeFilters={filters}
+          onRefresh={handleRefreshInbox}
         />
 
         {isScheduleMode && (
@@ -467,6 +474,7 @@ export default function InboxMain() {
               isScheduleMode={isScheduleMode}
               selectedConversations={selectedConversations}
               setSelectedConversations={setSelectedConversations}
+              refreshKey={refreshKey}
             />
           </div>
 

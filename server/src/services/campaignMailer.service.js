@@ -1,8 +1,10 @@
-// server/src/services/campaignMailer.service.js
+// COMPLETE FIX: campaignMailer.service.js with proper font size handling
+
 import nodemailer from "nodemailer";
 import prisma from "../prismaClient.js";
 import { decrypt } from "../utils/crypto.js";
 import cache from "../utils/cache.js";
+
 /* ------------------ helpers ------------------ */
 
 function shuffle(arr) {
@@ -30,7 +32,7 @@ function buildFollowupHtml({
   subject
 }) {
   return `
-    <div style="font-size:14px; line-height:1.6; color:#000;">
+    <div>
       
       <!-- Follow-up (top) -->
       <div>
@@ -41,7 +43,7 @@ function buildFollowupHtml({
       <hr style="border:none;border-top:1px solid #ccc;margin:16px 0;" />
 
       <!-- Thread header -->
-      <div style="font-size:14px; line-height:1.5;">
+      <div style="font-size:14px; line-height:1.5; font-family: Arial, sans-serif;">
         <b>From:</b> ${from}<br/>
         <b>Sent:</b> ${sentAt}<br/>
         <b>To:</b> ${to}<br/>
@@ -55,9 +57,6 @@ function buildFollowupHtml({
         margin:0;
         padding-left:12px;
         border-left:2px solid #ccc;
-        font-size:14px;
-        line-height:1.6;
-        color:#000;
       ">
         ${originalBody}
       </blockquote>
@@ -66,6 +65,7 @@ function buildFollowupHtml({
   `;
 }
 
+// ✅ Signature inherits from pitch context
 function buildSignature(account) {
   const name =
     account.senderName ||
@@ -73,21 +73,26 @@ function buildSignature(account) {
     "Sender";
 
   return `
-    <div style="font-size:15px; line-height:1.6; color:#000; font-family:Calibri, Arial, sans-serif;">
-    <b>
-      <br/>
+    <div style="
+      margin-top:16px;
+      font-size: 15px;
+      line-height: inherit;
+      color: #000;
+      font-weight: bold;
+    ">
       Regards,<br/>
-      ${name} - Marketing Analyst</b>
+      ${name} - Marketing Analyst
     </div>
   `;
 }
+
 
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// 🔥 Default limits (can be overridden by campaign.customLimits)
+// 🔥 Default limits
 const SAFE_LIMITS = {
   gmail: 50,
   gsuite: 80,
@@ -97,7 +102,6 @@ const SAFE_LIMITS = {
 };
 
 function getLimit(provider = "", accountId = null, customLimits = {}) {
-  // 🔥 Check custom limits first
   if (accountId && customLimits[accountId]) {
     return customLimits[accountId];
   }
@@ -109,13 +113,22 @@ function getLimit(provider = "", accountId = null, customLimits = {}) {
 function getDomainLabel(email = "") {
   const domain = email.split("@")[1]?.toLowerCase() || "";
 
-  // common providers
   if (domain.includes("gmail")) return "gmail";
   if (domain.includes("yahoo")) return "yahoo";
   if (domain.includes("outlook") || domain.includes("hotmail")) return "outlook";
 
-  // company domains: bouncecure.com → bouncecure
   return domain.split(".")[0] || "client";
+}
+
+// ✅ NEW: Function to ensure proper font size styling
+function wrapPitchContent(bodyHtml) {
+  // If the body already has a wrapper div with font-size, return as is
+  if (bodyHtml.trim().startsWith('<div') && bodyHtml.includes('font-size')) {
+    return bodyHtml;
+  }
+  
+  // Otherwise, wrap it in a div with default styling to ensure font sizes render
+  return `<div style="font-size: 14px; line-height: 1.5;">${bodyHtml}</div>`;
 }
 
 export async function sendBulkCampaign(campaignId) {
@@ -140,7 +153,7 @@ export async function sendBulkCampaign(campaignId) {
     where: { id: campaignId },
     data: { status: "sending" }
   });
-  // 🔥 Load custom limits if they exist
+
   let customLimits = {};
   if (campaign.customLimits) {
     try {
@@ -173,7 +186,6 @@ export async function sendBulkCampaign(campaignId) {
     const pitches = await prisma.pitchTemplate.findMany({
       where: { id: { in: pitchIds } }
     });
-
 
     pitchBodies = pitches.map(p => p.bodyHtml).filter(Boolean);
   }
@@ -221,9 +233,8 @@ export async function sendBulkCampaign(campaignId) {
       });
       if (!account) continue;
 
-      // 🔥 Get the limit for this account (1 hour window now)
       const limit = getLimit(account.provider, account.id, customLimits);
-      const delayPerEmail = (60 * 60 * 1000) / limit; // 1 hour window
+      const delayPerEmail = (60 * 60 * 1000) / limit;
 
       let smtpPassword = account.encryptedPass;
 
@@ -237,9 +248,7 @@ export async function sendBulkCampaign(campaignId) {
         host: account.smtpHost,
         port: Number(account.smtpPort),
         secure: Number(account.smtpPort) === 465,
-
         name: domain,  
-
         auth: {
           user: account.smtpUser || account.email,
           pass: smtpPassword,
@@ -253,7 +262,6 @@ export async function sendBulkCampaign(campaignId) {
 
       const fromEmail = account.smtpUser || account.email;
 
-      // 🔥 Send emails continuously within the 1-hour window
       for (const recipient of group) {
         try {
           const signature = buildSignature(account);
@@ -275,53 +283,63 @@ export async function sendBulkCampaign(campaignId) {
                 !originalBodyHtml.toLowerCase().includes("regards") &&
                 !originalBodyHtml.toLowerCase().includes(originalAccount.senderName?.toLowerCase() || "")
               ) {
-                originalWithSignature = originalBodyHtml + originalSignature;
+                originalWithSignature += `<br>${originalSignature}`;
               }
             }
           }
 
-          const recipientIndex = recipients.findIndex(r => r.id === recipient.id);
+          const followUpBody = pitchPlan ? pitchPlan[recipients.indexOf(recipient)] : campaign.bodyHtml;
 
-          const rawSubject = subjectPlan[recipientIndex];
-          const label = getDomainLabel(recipient.email);
-          const subject = `${label} - ${rawSubject}`;
+          const sentDate = recipient.sentAt
+            ? new Date(recipient.sentAt).toLocaleString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+              })
+            : new Date().toLocaleString();
 
-          const followUpBody = pitchPlan[recipientIndex] + signature;
-
-          const html = buildFollowupHtml({
+          const threadedHtml = buildFollowupHtml({
             followUpBody,
             originalBody: originalWithSignature,
-            from: fromEmail,
+            from: `${account.senderName || account.email.split("@")[0]} <${account.email}>`,
             to: recipient.email,
-            sentAt: new Date().toLocaleString(),
-            subject
+            sentAt: sentDate,
+            subject: recipient.sentSubject || "Previous email",
           });
 
+          const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            </head>
+            <body style="margin:0; padding:0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.6; color: inherit;">
+              ${threadedHtml}
+            </body>
+            </html>
+          `;
 
           await transporter.sendMail({
             from: account.senderName
               ? `"${account.senderName}" <${fromEmail}>`
               : fromEmail,
             to: recipient.email,
-            subject,
-            html
+            subject: recipient.sentSubject || "RE: Previous email",
+            html,
           });
 
           await prisma.campaignRecipient.update({
             where: { id: recipient.id },
-            data: {
-              status: "sent",
-              sentAt: new Date(),
-              accountId: account.id,
-              sentSubject: subject,
-              sentBodyHtml: html,
-              sentFromEmail: fromEmail
-            }
+            data: { status: "sent", sentAt: new Date() }
           });
 
-          console.log(`✅ Sent to ${recipient.email} (Account: ${account.email})`);
+          console.log(`✅ Follow-up sent to ${recipient.email}`);
 
-          // 🔥 Throttle based on the calculated delay
           await sleep(delayPerEmail);
 
         } catch (err) {
@@ -334,7 +352,6 @@ export async function sendBulkCampaign(campaignId) {
 
           console.log("Campaign stopping due to error:", err.message);
           
-          // 🔥 FIX: Ensure status is updated before exiting
           await updateCampaignStatus(campaignId); 
           return; 
         }
@@ -363,7 +380,6 @@ export async function sendBulkCampaign(campaignId) {
       ? distribute(pitchBodies, recipients.length)
       : null;
 
-    // 🔥 NEW: Track sending progress per account to handle limits
     const accountSendCount = {};
     const accountLastSendTime = {};
 
@@ -381,28 +397,23 @@ export async function sendBulkCampaign(campaignId) {
         });
         if (!account) continue;
 
-        // 🔥 Get the limit for this account
         const limit = getLimit(account.provider, account.id, customLimits);
-        const delayPerEmail = (60 * 60 * 1000) / limit; // 1 hour window
+        const delayPerEmail = (60 * 60 * 1000) / limit;
 
-        // 🔥 Check if we need to wait for the next hour window
         if (!accountSendCount[accountId]) {
           accountSendCount[accountId] = 0;
           accountLastSendTime[accountId] = Date.now();
         }
 
-        // If we've hit the limit, check if an hour has passed
         if (accountSendCount[accountId] >= limit) {
           const timeSinceFirstSend = Date.now() - accountLastSendTime[accountId];
           
           if (timeSinceFirstSend < 60 * 60 * 1000) {
-            // Wait for the remainder of the hour
             const waitTime = (60 * 60 * 1000) - timeSinceFirstSend;
             console.log(`⏳ Account ${account.email} reached limit. Waiting ${Math.ceil(waitTime / 1000 / 60)} minutes...`);
             await sleep(waitTime);
           }
           
-          // Reset counter for new hour
           accountSendCount[accountId] = 0;
           accountLastSendTime[accountId] = Date.now();
         }
@@ -419,9 +430,7 @@ export async function sendBulkCampaign(campaignId) {
           host: account.smtpHost,
           port: Number(account.smtpPort),
           secure: Number(account.smtpPort) === 465,
-
           name: domain,  
-
           auth: {
             user: account.smtpUser || account.email,
             pass: smtpPassword,
@@ -437,12 +446,61 @@ export async function sendBulkCampaign(campaignId) {
         const signature = buildSignature(account);
 
         const body = pitchPlan ? pitchPlan[i] : campaign.bodyHtml;
-        const html = `
-          <div style="font-family:Calibri, Arial, sans-serif; font-size:14px; line-height:1.0; color:#000;">
-            ${body}
-            ${signature}
-          </div>
-        `;
+        
+        // ✅ CRITICAL FIX: Simplified HTML structure for maximum email client compatibility
+   
+        const cleanBody = body
+          .replace(/<div><br><\/div>/gi, "")
+          .replace(/<p><br><\/p>/gi, "")
+          .replace(/<p>\s*<\/p>/gi, "");
+
+        // ✅ Outlook-safe HTML (TABLE BASED)
+        const html = `<!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+
+        <body style="margin:0; padding:0;">
+
+          <!-- ✅ Outlook requires table structure -->
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+            style="border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt;">
+
+            <tr>
+              <td style="padding:15px;">
+
+                <!-- Content Table -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+                  style="border-collapse:collapse;">
+
+                  <tr>
+                    <td style="
+                      mso-line-height-rule:exactly;
+                      line-height:1.0;
+                      padding:0;
+                      margin:0;
+                    ">
+
+                      ${cleanBody}
+
+                      <br>
+
+                      ${signature}
+
+                    </td>
+                  </tr>
+
+                </table>
+
+              </td>
+            </tr>
+
+          </table>
+
+        </body>
+        </html>`;
 
 
         await transporter.sendMail({
@@ -454,20 +512,16 @@ export async function sendBulkCampaign(campaignId) {
           html
         });
 
-        // ✅ update progress
         await prisma.campaignRecipient.update({
           where: { id: recipient.id },
           data: { status: "sent", sentAt: new Date(), accountId: account.id }
         });
 
-        // 🔥 Increment send count
         accountSendCount[accountId]++;
 
         console.log(`✅ Sent ${accountSendCount[accountId]}/${limit} to ${recipient.email} (Account: ${account.email})`);
 
-        // throttle per account
         await sleep(delayPerEmail);
-
 
       } catch (err) {
         console.error(`❌ Failed to send to ${recipient.email}:`, err.message);
@@ -479,21 +533,16 @@ export async function sendBulkCampaign(campaignId) {
 
         console.log("Campaign stopping due to error:", err.message);
         
-        // 🔥 FIX: Ensure status is updated before exiting
         await updateCampaignStatus(campaignId); 
         return; 
       }
-
     }
   }
 
-  // 🔥 After sending all emails, update campaign status
   await updateCampaignStatus(campaignId);
-
   console.log(`✅ Campaign ${campaignId} completed all pending emails`);
 }
 
-// 🔥 Helper function to update campaign status based on recipients
 async function updateCampaignStatus(campaignId) {
   const stats = await prisma.campaignRecipient.groupBy({
     by: ["status"],
@@ -523,7 +572,6 @@ async function updateCampaignStatus(campaignId) {
     finalStatus = "completed_with_errors";
   }
 
-  // Get campaign to find userId for cache invalidation
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
     select: { userId: true }
@@ -534,14 +582,12 @@ async function updateCampaignStatus(campaignId) {
     data: { status: finalStatus },
   });
 
-  // 🔥 Invalidate dashboard cache immediately when status changes
   if (campaign?.userId) {
     const ranges = ['today', 'week', 'month'];
     ranges.forEach(range => {
       cache.del(`dashboard:${campaign.userId}:${range}`);
     });
     
-    // Clear date-specific caches
     const keys = cache.keys();
     keys.forEach(key => {
       if (key.startsWith(`dashboard:${campaign.userId}:`)) {

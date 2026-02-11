@@ -1,3 +1,4 @@
+// ✅ EmailList.jsx  
 import React, { useState, useEffect } from "react";
 import { Mail, ChevronDown, ChevronUp, Users, Globe, Zap } from "lucide-react";
 import { api } from "../../utils/api"; 
@@ -16,15 +17,62 @@ export default function ConversationList({
   setSelectedConversations,
   conversations,
   setConversations,
-  activeView,
+  refreshKey,
 }) {
   const [sortBy, setSortBy] = useState("date");
   const [sortOrder, setSortOrder] = useState("desc");
+  const [loading, setLoading] = useState(false);
+
+  // ✅ FIXED: Corrected API endpoint
+  const fetchEmails = async () => {
+    if (!selectedAccount?.id) {
+      console.warn("No account ID available");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.get(
+        `${API_BASE_URL}/api/inbox/conversations/${selectedAccount.id}`,
+        {
+          params: {
+            folder: selectedFolder,
+          },
+        }
+      );
+
+      setConversations(res.data.data || []); // ✅ Access nested data
+    } catch (err) {
+      console.error("Failed to fetch emails", err);
+      setConversations([]); // ✅ Reset on error
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  
+useEffect(() => {
+  if (!selectedAccount?.id || !selectedFolder) return;
+
+  // First load
+  fetchEmails();
+
+  // ✅ Auto refresh every 15 seconds
+  const interval = setInterval(() => {
+    fetchEmails();
+  }, 30000); // 30 seconds
+
+  return () => clearInterval(interval);
+}, [refreshKey, selectedAccount?.id, selectedFolder]);
+
 
   // ✅ DEBUG: Log when conversations change
   useEffect(() => {
     console.log(`📊 EmailList rendered with ${conversations.length} conversations`);
   }, [conversations]);
+
+  // ✅ FIXED: Early return moved AFTER all hooks
+  if (loading) return <p className="p-4 text-center text-green-700 mt-20">Refreshing inbox...</p>;
 
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -122,7 +170,7 @@ export default function ConversationList({
     }
   };
 
-  if (!selectedAccount || !selectedFolder) {
+  if (!selectedAccount?.id || !selectedFolder) {
     return (
       <div className="flex items-center justify-center h-full text-slate-500">
         <p className="text-sm">Select an account and folder to view messages</p>

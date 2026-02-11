@@ -67,7 +67,7 @@ const COLORS = [
 ];
 
 // 🔥 NEW: Email limit options per hour
-const LIMIT_OPTIONS = [20, 30, 40, 50, 70, 80, 100, 150];
+const LIMIT_OPTIONS = [20, 30, 40, 50, 70, 80, 100, 150, 200];
 
 export default function CreateCampaign() {
   const [accounts, setAccounts] = useState([]);
@@ -455,6 +455,10 @@ const lockedAccountsList =
 
 const lockedAccountsCount = lockedAccountsList.length;
 
+const subjectCount = subject
+  .split("\n")
+  .map(s => s.trim())
+  .filter(Boolean).length;
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 min-h-screen relative overflow-hidden">
@@ -474,7 +478,7 @@ const lockedAccountsCount = lockedAccountsList.length;
             </div>
           </div>
           <div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent py-2">
               Create Campaign
             </h1>
             <p className="text-sm text-emerald-600 mt-1 font-semibold">Send immediate or scheduled email campaigns (continuous sending)</p>
@@ -576,7 +580,7 @@ const lockedAccountsCount = lockedAccountsList.length;
               </button>
 
              {showFromDropdown && (
-                <div className="absolute z-50 mt-2 w-full bg-white/95 backdrop-blur-sm border border-emerald-200 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
+                <div className="relative z-50 mt-2 w-full bg-white/95 backdrop-blur-sm border border-emerald-200 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
 
                   {/* AVAILABLE ACCOUNTS */}
                   {availableAccounts.length > 0 && (
@@ -683,7 +687,10 @@ const lockedAccountsCount = lockedAccountsList.length;
 
             {/* Subject Lines */}
             <div>
-              <label className="block text-sm font-bold text-emerald-600 mb-2 uppercase tracking-wide">Subject Lines (one per line)</label>
+              <label className="block text-sm font-bold text-emerald-600 mb-2 uppercase tracking-wide">
+                Subject Lines (one per line)
+              </label>
+
               <textarea
                 rows={3}
                 value={subject}
@@ -691,7 +698,16 @@ const lockedAccountsCount = lockedAccountsList.length;
                 placeholder="Enter multiple subject lines...&#10;One per line&#10;Random selection"
                 className="w-full border border-emerald-200 rounded-xl p-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium hover:border-emerald-300 transition-colors"
               />
+
+              {/* ✅ Subject Count Display */}
+              <p className="mt-2 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg">
+                Total Subject Lines:{" "}
+                <span className="text-lg font-bold text-emerald-600">
+                  {subjectCount}
+                </span>
+              </p>
             </div>
+
 
             {/* Pitch Templates */}
             <div className="relative">
@@ -710,7 +726,7 @@ const lockedAccountsCount = lockedAccountsList.length;
               </button>
 
              {showPitchDropdown && (
-                  <div className="absolute z-[9999] mt-2 w-full bg-white border border-emerald-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
+                  <div className="relative z-[9999] bottom mb-2 w-full bg-white border border-emerald-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
                     <div className="p-3 space-y-1">
                       {pitches.map((pitch) => (
                         <label
@@ -753,7 +769,7 @@ const lockedAccountsCount = lockedAccountsList.length;
           </div>
 
           {/* Email Editor Card */}
-          <div className="bg-white/80 backdrop-blur-sm border border-emerald-200/50 rounded-2xl overflow-hidden shadow-lg">
+          <div className="bg-white/80 backdrop-blur-sm border border-emerald-200/50 rounded-2xl overflow-visible shadow-lg relative z-[1]">
             <div className="border-b border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-3">
               <h3 className="text-sm font-bold text-emerald-600 uppercase tracking-wide">Email Content Editor</h3>
             </div>

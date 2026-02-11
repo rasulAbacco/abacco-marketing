@@ -64,27 +64,34 @@ router.get("/conversations/:accountId", protect, async (req, res) => {
     });
 
     // 🔥 ALWAYS sync first (important!)
-    // if (account) {
-    //   await runSyncForAccount(prisma, account.email);
-    // }
+    if (account) {
+      runSyncForAccount(prisma, account.email)
+        .catch(err => console.error(err));
+    }
+    // ✅ ALWAYS SYNC BEFORE FETCHING (NON-BLOCKING SAFE)
+      if (account) {
+        await runSyncForAccount(prisma, account.email);
+      }
+
+
 
     // Then check cache
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      console.log("🟢 CACHE HIT: inbox");
+    // const cached = cache.get(cacheKey);
+    // if (cached) {
+    //   console.log("🟢 CACHE HIT: inbox");
 
-      // 🔄 background sync (NON-BLOCKING)
-      // 🔄 background sync (NON-BLOCKING)
-      runSyncForAccount(prisma, account.email)
-      .then(() => {
-        cache.del(cacheKey); // ✅ clear cache after new emails
-      })
-      .catch(err => console.error(err));
+    //   // 🔄 background sync (NON-BLOCKING)
+    //   // 🔄 background sync (NON-BLOCKING)
+    //   runSyncForAccount(prisma, account.email)
+    //   .then(() => {
+    //     cache.del(cacheKey); // ✅ clear cache after new emails
+    //   })
+    //   .catch(err => console.error(err));
 
 
 
-      return res.json({ success: true, data: cached });
-    }
+    //   return res.json({ success: true, data: cached });
+    // }
 
 
     let whereCondition = {

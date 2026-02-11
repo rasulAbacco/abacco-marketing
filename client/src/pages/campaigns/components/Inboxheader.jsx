@@ -1,30 +1,14 @@
 import React, { useState, useRef, useEffect } from "react";
-import {
-  Filter,
-  Calendar,
-  Clock,
-  ChevronDown,
-  X,
-  Tag, 
-  User,
-  Mail,
-  Search,
-  Globe,
-  RefreshCcw,
-} from "lucide-react";
-import { api } from "../../utils/api.js";
- 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+import { Mail, Search, RefreshCcw } from "lucide-react";
 
 export default function InboxHeader({
   selectedAccount,
   selectedFolder,
-  onScheduleClick,
   onSearchEmail,
+  onRefresh,
 }) {
-
   const [searchEmail, setSearchEmail] = useState("");
-
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const searchTimeoutRef = useRef(null);
 
@@ -40,8 +24,6 @@ export default function InboxHeader({
     }, 500);
   };
 
- 
- 
   return (
     <div className="bg-white/80 backdrop-blur-xl border-b border-emerald-200/50 px-6 py-3 shadow-sm">
       <div className="flex items-center justify-between mb-3">
@@ -62,7 +44,9 @@ export default function InboxHeader({
                   : "Inbox"}
               </h1>
               {selectedAccount && (
-                <p className="text-xs text-slate-600 font-medium">{selectedAccount.email}</p>
+                <p className="text-xs text-slate-600 font-medium">
+                  {selectedAccount.email}
+                </p>
               )}
             </div>
           </div>
@@ -71,11 +55,22 @@ export default function InboxHeader({
         {/* Right Side */}
         <div className="flex items-center gap-2">
           <button
-            onClick={onScheduleClick}
-            className="flex items-center gap-2 px-4 py-2 border border-emerald-300 rounded-lg hover:bg-gradient-to-r hover:from-emerald-50 hover:to-teal-50 transition-all text-sm font-medium text-emerald-700 shadow-sm hover:shadow-md transform hover:scale-105"
+            onClick={() => {
+              setIsRefreshing(true);
+              onRefresh();
+
+              // Stop rotation after 1 second
+              setTimeout(() => setIsRefreshing(false), 1000);
+            }}
+            className="bg-green-200 flex items-center gap-2 px-3 py-1.5 text-sm border rounded hover:bg-green-250"
           >
-            <Clock className="w-4 h-4" />
-            Add Schedule
+            <RefreshCcw
+              size={16}
+              className={`transition-transform duration-700 ${
+                isRefreshing ? "rotate-[360deg]" : ""
+              }`}
+            />
+            Refresh
           </button>
         </div>
       </div>
@@ -91,7 +86,6 @@ export default function InboxHeader({
           className="w-full pl-10 pr-4 py-2 border border-emerald-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white/80 backdrop-blur-sm placeholder-slate-400"
         />
       </div>
- 
     </div>
   );
 }

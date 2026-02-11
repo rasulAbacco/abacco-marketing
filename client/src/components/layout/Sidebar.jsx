@@ -8,19 +8,20 @@ import {
   Megaphone,
   LineChart,
   Shield,
-  Repeat,
+  FileText,
   X,
   Sparkles,
+  BarChart3,
 } from "lucide-react";
 
 const navigationItems = [
-  { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-  { name: "Leads", path: "/leads", icon: Users },
-  { name: "Pitches", path: "/pitches", icon: Mail },
-  { name: "Inbox", path: "/inbox", icon: Megaphone },
-  { name: "Campaigns", path: "/campaigns", icon: Repeat },
-  { name: "Analytics", path: "/analytics", icon: LineChart },
-  { name: "Admin", path: "/admin", icon: Shield },
+  { name: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+  { name: "Leads", icon: Users, path: "/leads" },
+  { name: "Inbox", icon: Mail, path: "/inbox" },
+  { name: "Campaigns", icon: Megaphone, path: "/campaigns" },
+  { name: "Pitches", icon: FileText, path: "/pitches" },
+  { name: "Analytics", icon: BarChart3, path: "/analytics" },
+  { name: "Admin", icon: Shield, path: "/admin" },
 ];
 
 export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
@@ -52,9 +53,10 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
   };
 
   // ✅ Check if user is admin (case-insensitive)
+  // ✅ Check if user is admin (case-insensitive and handles all data types)
   const isAdmin = () => {
     if (!userData || !userData.jobRole) return false;
-    const role = userData.jobRole.toString().toLowerCase();
+    const role = String(userData.jobRole).toLowerCase().trim();
     console.log("Checking if admin - role:", role, "isAdmin:", role === "admin");
     return role === "admin";
   };

@@ -332,13 +332,14 @@ router.post("/", protect, async (req, res) => {
         smtpUser,
         encryptedPass,
         authType,
-        senderName: senderName?.trim() || null,  
+        senderName: senderName?.trim() || null,
         verified: true,
-
-        // ✅ Proper relation connect (NO foreign key error)
         user: { connect: { id: req.user.id } }
       },
     });
+
+    // ✅ VERY IMPORTANT — CLEAR CACHE
+    cache.del(`accounts:${req.user.id}`);
 
     // Trigger initial sync in background
     runSyncForAccount(prisma, email)
@@ -346,6 +347,7 @@ router.post("/", protect, async (req, res) => {
       .catch((e) => console.error("Sync trigger error:", e));
 
     res.status(201).json(newAccount);
+
   } catch (err) {
     console.error("CREATE ACCOUNT ERROR:", err);
     res
