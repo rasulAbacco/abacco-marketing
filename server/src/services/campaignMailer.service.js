@@ -1,4 +1,4 @@
-// COMPLETE FIX: campaignMailer.service.js with proper font size handling
+// FIXED: campaignMailer.service.js with proper email formatting
 
 import nodemailer from "nodemailer";
 import prisma from "../prismaClient.js";
@@ -43,7 +43,7 @@ function buildFollowupHtml({
       <hr style="border:none;border-top:1px solid #ccc;margin:16px 0;" />
 
       <!-- Thread header -->
-      <div style="font-size:14px; line-height:1.5; font-family: Arial, sans-serif;">
+      <div style="font-size:13px; line-height:1.5; font-family: Calibri, sans-serif;">
         <b>From:</b> ${from}<br/>
         <b>Sent:</b> ${sentAt}<br/>
         <b>To:</b> ${to}<br/>
@@ -65,27 +65,34 @@ function buildFollowupHtml({
   `;
 }
 
-// ✅ Signature inherits from pitch context
-function buildSignature(account) {
+// ✅ FIXED: Signature now inherits styles properly - no hardcoded black color
+function buildSignature(account, baseStyles = {}) {
   const name =
     account.senderName ||
     account.email?.split("@")[0] ||
     "Sender";
 
+  const safeStyles = {
+    fontFamily: baseStyles.fontFamily || "Calibri, sans-serif",
+    fontSize: baseStyles.fontSize || "15px",
+    color: baseStyles.color || "#000000",
+  };
+
   return `
     <div style="
       margin-top:16px;
-      font-size: 15px;
-      line-height: inherit;
-      color: #000;
-      font-weight: bold;
+      font-family:${safeStyles.fontFamily};
+      font-size:${safeStyles.fontSize};
+      line-height:1.6;
+      color:${safeStyles.color};
+      font-weight:bold;
     ">
       Regards,<br/>
       ${name} - Marketing Analyst
     </div>
   `;
+  
 }
-
 
 
 function sleep(ms) {
@@ -120,15 +127,48 @@ function getDomainLabel(email = "") {
   return domain.split(".")[0] || "client";
 }
 
-// ✅ NEW: Function to ensure proper font size styling
-function wrapPitchContent(bodyHtml) {
-  // If the body already has a wrapper div with font-size, return as is
-  if (bodyHtml.trim().startsWith('<div') && bodyHtml.includes('font-size')) {
-    return bodyHtml;
-  }
+// ✅ NEW: Convert all styles to inline and ensure email compatibility
+function normalizeHtmlForEmail(html) {
+  if (!html) return html;
+
+  let cleaned = html.trim();
+
+  // Convert pt to px
+  cleaned = cleaned.replace(/font-size:\s*(\d+)pt/gi, (match, size) => {
+    const pxSize = Math.round(parseFloat(size) * 1.333);
+    return `font-size:${pxSize}px`;
+  });
+
+  // Convert font tags
+  cleaned = cleaned.replace(/<font([^>]*)>/gi, '<span$1>');
+  cleaned = cleaned.replace(/<\/font>/gi, '</span>');
+ 
+  // Remove empty blocks
+  cleaned = cleaned.replace(/<div>\s*<\/div>/gi, '');
+  cleaned = cleaned.replace(/<div><br><\/div>/gi, '<br>');
+  cleaned = cleaned.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
+
+  // Force Outlook-safe paragraph spacing
+  cleaned = cleaned.replace(/<p([^>]*)>/gi, 
+    '<p$1 style="margin:0; padding:0; mso-margin-top-alt:0; mso-margin-bottom-alt:0; line-height:1.4;">'
+  );
+
+
+  return cleaned;
+}
+
+
+// ✅ NEW: Extract base font properties from HTML content for signature inheritance
+function extractBaseStyles(html) {
+  const fontFamilyMatch = html.match(/font-family:\s*([^;}"']+)/i);
+  const fontSizeMatch = html.match(/font-size:\s*([^;}"']+)/i);
+  const colorMatch = html.match(/color:\s*([^;}"']+)/i);
   
-  // Otherwise, wrap it in a div with default styling to ensure font sizes render
-  return `<div style="font-size: 14px; line-height: 1.5;">${bodyHtml}</div>`;
+  return {
+    fontFamily: fontFamilyMatch ? fontFamilyMatch[1].trim() : 'Calibri, sans-serif',
+    fontSize: fontSizeMatch ? fontSizeMatch[1].trim() : '15px',
+    color: colorMatch ? colorMatch[1].trim() : '#000000'
+  };
 }
 
 export async function sendBulkCampaign(campaignId) {
@@ -264,7 +304,15 @@ export async function sendBulkCampaign(campaignId) {
 
       for (const recipient of group) {
         try {
-          const signature = buildSignature(account);
+          const followupBodyRaw = pitchPlan[group.indexOf(recipient)];
+          const followupBody = normalizeHtmlForEmail(followupBodyRaw);
+
+          const baseStyles = extractBaseStyles(followupBody);
+
+          const signature = buildSignature(account, baseStyles);
+
+          const followupWithSignature = followupBody + signature;
+
 
           let originalWithSignature =
             recipient.sentBodyHtml ||
@@ -279,49 +327,43 @@ export async function sendBulkCampaign(campaignId) {
             if (originalAccount) {
               const originalSignature = buildSignature(originalAccount);
 
-              if (
-                !originalBodyHtml.toLowerCase().includes("regards") &&
-                !originalBodyHtml.toLowerCase().includes(originalAccount.senderName?.toLowerCase() || "")
-              ) {
-                originalWithSignature += `<br>${originalSignature}`;
+              if (!originalWithSignature.includes("Regards")) {
+                originalWithSignature += originalSignature;
               }
             }
           }
 
-          const followUpBody = pitchPlan ? pitchPlan[recipients.indexOf(recipient)] : campaign.bodyHtml;
-
-          const sentDate = recipient.sentAt
-            ? new Date(recipient.sentAt).toLocaleString("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: true,
-              })
-            : new Date().toLocaleString();
-
-          const threadedHtml = buildFollowupHtml({
-            followUpBody,
-            originalBody: originalWithSignature,
-            from: `${account.senderName || account.email.split("@")[0]} <${account.email}>`,
-            to: recipient.email,
-            sentAt: sentDate,
-            subject: recipient.sentSubject || "Previous email",
+          const originalDate = recipient.sentAt || new Date();
+          const sentAt = originalDate.toLocaleString("en-US", {
+            weekday: "short",
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
           });
 
-          const html = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset="UTF-8" />
-              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            </head>
-            <body style="margin:0; padding:0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.6; color: inherit;">
-              ${threadedHtml}
-            </body>
-            </html>
+          // const followupWithSignature = pitchPlan[group.indexOf(recipient)] + signature;
+          const threadedHtml = buildFollowupHtml({
+            followUpBody: followupWithSignature,
+            originalBody: originalWithSignature,
+            from: account.email,
+            to: recipient.email,
+            sentAt,
+            subject: recipient.sentSubject || ""
+          });
+
+          // ✅ FIXED: Proper email HTML structure
+          const html = `<!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="margin:0; padding:0; font-family: Calibri, sans-serif;">
+            ${threadedHtml}
+          </body>
+          </html>
           `;
 
           await transporter.sendMail({
@@ -443,64 +485,114 @@ export async function sendBulkCampaign(campaignId) {
         });
 
         const fromEmail = account.smtpUser || account.email;
-        const signature = buildSignature(account);
+         
+        let body = pitchPlan ? pitchPlan[i] : campaign.bodyHtml;
 
-        const body = pitchPlan ? pitchPlan[i] : campaign.bodyHtml;
+        // Normalize
+        body = normalizeHtmlForEmail(body);
+
+        // Extract base styles
+        const baseStyles = extractBaseStyles(body);
+
+        // Safety color fix
+        const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
+
+        if (
+          !baseStyles.color ||
+          unsafeColors.includes(baseStyles.color.toLowerCase())
+        ) {
+          baseStyles.color = "#000000";
+        }
+
+        // Build signature AFTER baseStyles exists
+        const signature = buildSignature(account, baseStyles);
+
+
         
-        // ✅ CRITICAL FIX: Simplified HTML structure for maximum email client compatibility
-   
-        const cleanBody = body
-          .replace(/<div><br><\/div>/gi, "")
-          .replace(/<p><br><\/p>/gi, "")
-          .replace(/<p>\s*<\/p>/gi, "");
+        // ✅ ENSURE body has color - wrap in span if needed
+          // Ensure text is never invisible
+        if (!body.includes("color:")) {
+          body = `<span style="color:#000000;">${body}</span>`;
+        }
 
-        // ✅ Outlook-safe HTML (TABLE BASED)
+        // ✅ CRITICAL FIX: Outlook-safe HTML with proper inline styles
         const html = `<!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        </head>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-        <body style="margin:0; padding:0;">
+            <style>
+              body {
+                margin: 0;
+                padding: 0;
+              }
 
-          <!-- ✅ Outlook requires table structure -->
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
-            style="border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt;">
+              table {
+                border-collapse: collapse;
+              }
 
-            <tr>
-              <td style="padding:15px;">
+              p {
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 1.6 !important;
+              }
 
-                <!-- Content Table -->
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
-                  style="border-collapse:collapse;">
+              div {
+                margin: 0;
+                padding: 0;
+              }
 
-                  <tr>
-                    <td style="
-                      mso-line-height-rule:exactly;
-                      line-height:1.0;
-                      padding:0;
-                      margin:0;
-                    ">
+              /* Outlook specific */
+              .ExternalClass p {
+                margin: 0 !important;
+              }
+            </style>
 
-                      ${cleanBody}
+            <!--[if mso]>
+            <style>
+              p {
+                margin: 0 !important;
+                line-height: 1.6 !important;
+              }
+            </style>
+            <![endif]-->
+          </head>
 
-                      <br>
+          <body style="margin:0; padding:0; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; background-color:#ffffff;">
 
-                      ${signature}
+            <!-- ✅ Outlook requires table structure -->
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+              style="border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; background-color:#ffffff;">
 
-                    </td>
-                  </tr>
+              <tr>
+                <td style="padding:20px; background-color:#ffffff;">
 
-                </table>
+                  <!-- Content Wrapper with base styles -->
+                  <div style="
+                    font-family: ${baseStyles.fontFamily};
+                    font-size: ${baseStyles.fontSize};
+                    color: ${baseStyles.color};
+                    line-height: 1.4;
+                    mso-line-height-rule: exactly;
 
-              </td>
-            </tr>
+                  ">
 
-          </table>
 
-        </body>
-        </html>`;
+                    ${body}
+
+                    ${signature}
+
+                  </div>
+
+                </td>
+              </tr>
+
+            </table>
+
+          </body>
+          </html>`;
 
 
         await transporter.sendMail({

@@ -149,7 +149,7 @@ export const getTodayCampaignReport = async (req, res) => {
       };
     });
 
-    console.log("🗺️ Account email map keys:", Object.keys(accountEmailMap));
+    // console.log("🗺️ Account email map keys:", Object.keys(accountEmailMap));
 
     // ✅ Step 6: Count leads per receiving account (ALL DOMAINS)
     const leadsByAccount = {};

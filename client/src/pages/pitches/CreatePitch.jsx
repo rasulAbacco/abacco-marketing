@@ -45,6 +45,7 @@ const FONT_SIZES = [
   { value: "12px", label: "12" },
   { value: "13px", label: "13" },
   { value: "14px", label: "14" },
+  { value: "15px", label: "15" },
   { value: "16px", label: "16" },
   { value: "18px", label: "18" },
   { value: "20px", label: "20" },
@@ -77,8 +78,8 @@ export default function CreatePitch({ pitch, onSaved }) {
   const [pitchName, setPitchName] = useState("");
   const [showPreview, setShowPreview] = useState(false);
 
-  const [currentFont, setCurrentFont] = useState("Arial, sans-serif");
-  const [currentSize, setCurrentSize] = useState("14px");
+  const [currentFont, setCurrentFont] = useState("Calibri, sans-serif");
+  const [currentSize, setCurrentSize] = useState("13px");
   const [currentColor, setCurrentColor] = useState("#000000");
   const [showColors, setShowColors] = useState(false);
   const [pitchType, setPitchType] = useState("fresh");
@@ -175,7 +176,7 @@ export default function CreatePitch({ pitch, onSaved }) {
     
     // ✅ CRITICAL: Wrap content in a div with base styling if not already wrapped
     if (!html.trim().startsWith('<div') || !html.includes('style=')) {
-      html = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #000000;">${html}</div>`;
+      html = `<div style="font-family: Calibri, sans-serif; font-size: 13px; line-height: 1.6; color: #000000;">${html}</div>`;
     }
 
     const text = html.replace(/<[^>]*>/g, "").toLowerCase();
@@ -386,8 +387,8 @@ export default function CreatePitch({ pitch, onSaved }) {
               suppressContentEditableWarning
               className="min-h-[300px] p-6 outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
               style={{
-                fontFamily: "Arial, sans-serif",
-                fontSize: "14px",
+                fontFamily: "Calibri, sans-serif",
+                fontSize: "13px",
                 lineHeight: "1.6",
               }}
             />

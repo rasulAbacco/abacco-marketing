@@ -42,24 +42,20 @@ const FONT_FAMILIES = [
 ];
 
 const FONT_SIZES = [
-  { value: "8pt", label: "8" },
-  { value: "10pt", label: "10" },
-  { value: "11pt", label: "11" },
-  { value: "12pt", label: "12" },
-  { value: "13pt", label: "13" },
-  { value: "14pt", label: "14" },
-  { value: "16pt", label: "16" },
-  { value: "18pt", label: "18" },
-  { value: "20pt", label: "20" },
-  { value: "24pt", label: "24" },
-  { value: "28pt", label: "28" },
-  { value: "32pt", label: "32" },
-  { value: "36pt", label: "36" },
-  { value: "40pt", label: "40" },
-  { value: "48pt", label: "48" },
-  { value: "56pt", label: "56" },
+  { value: "10px", label: "10" },
+  { value: "11px", label: "11" },
+  { value: "12px", label: "12" },
+  { value: "13px", label: "13" },
+  { value: "14px", label: "14" },
+  { value: "15px", label: "15" },
+  { value: "16px", label: "16" },
+  { value: "18px", label: "18" },
+  { value: "20px", label: "20" },
+  { value: "24px", label: "24" },
+  { value: "28px", label: "28" },
+  { value: "32px", label: "32" },
+  { value: "36px", label: "36" },
 ];
-
 
 const COLORS = [
   "#000000", "#444444", "#666666", "#999999", "#CCCCCC", "#EEEEEE",
@@ -96,7 +92,7 @@ export default function CreateCampaign() {
   const [attachments, setAttachments] = useState([]);
 
   const [currentFont, setCurrentFont] = useState("Calibri, sans-serif");
-  const [currentSize, setCurrentSize] = useState("11pt");
+  const [currentSize, setCurrentSize] = useState("13px");
   const [currentColor, setCurrentColor] = useState("#000000");
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [customSize, setCustomSize] = useState("");
@@ -117,45 +113,56 @@ export default function CreateCampaign() {
 const applyFontSize = (size) => {
   setCurrentSize(size);
 
-  // Map pt sizes to execCommand sizes (1–7)
-const sizeMap = {
-  "8pt": "1",
-  "10pt": "2",
-  "11pt": "2",
-  "12pt": "3",
-  "13pt": "3",
-  "14pt": "4",
-  "16pt": "5",
-  "18pt": "6",
-  "20pt": "6",
-  "24pt": "7",
-  "28pt": "7",
-  "32pt": "7",
-  "36pt": "7",
-  "40pt": "7",
-  "48pt": "7",
-  "56pt": "7",
- 
-};
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return;
 
-  document.execCommand("fontSize", false, sizeMap[size] || "3");
-
-  // Fix the ugly <font size="..."> tags and convert to inline style
-  const editor = editorRef.current;
-  const fonts = editor.querySelectorAll("font[size]");
-  fonts.forEach(font => {
-    font.removeAttribute("size");
-    font.style.fontSize = size;
-  });
-
-  editor.focus();
+  const range = selection.getRangeAt(0);
+  const selectedContent = range.extractContents();
+  
+  // Create a span with inline font-size style
+  const span = document.createElement('span');
+  span.style.fontSize = size;
+  span.appendChild(selectedContent);
+  
+  range.insertNode(span);
+  
+  editorRef.current?.focus();
 };
 
 
   const applyColor = (color) => {
     setCurrentColor(color);
-    formatText("foreColor", color);
+    
+    const selection = window.getSelection();
+    if (!selection.rangeCount) {
+      // No selection, apply to whole editor
+      if (editorRef.current) {
+        editorRef.current.style.color = color;
+      }
+      setShowColorPicker(false);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    
+    // If nothing selected, apply to editor
+    if (range.collapsed) {
+      if (editorRef.current) {
+        editorRef.current.style.color = color;
+      }
+      setShowColorPicker(false);
+      return;
+    }
+
+    // Apply color to selected text
+    const selectedContent = range.extractContents();
+    const span = document.createElement('span');
+    span.style.color = color;
+    span.appendChild(selectedContent);
+    range.insertNode(span);
+    
     setShowColorPicker(false);
+    editorRef.current?.focus();
   };
 
   const insertLink = () => {
@@ -850,8 +857,13 @@ const subjectCount = subject
             <div
               ref={editorRef}
               contentEditable
-              className="min-h-[300px] max-h-[500px] overflow-y-auto p-5 outline-none text-gray-900 bg-white"
-              style={{ fontFamily: currentFont, fontSize: currentSize }}
+              className="min-h-[300px] max-h-[500px] overflow-y-auto p-5 outline-none bg-white"
+              style={{ 
+                fontFamily: currentFont, 
+                fontSize: currentSize,
+                lineHeight: "1.6",
+                color: currentColor
+              }}
               suppressContentEditableWarning
             />
 
@@ -973,7 +985,7 @@ const subjectCount = subject
             {/* Manual Entry */}
             {recipientMode === "manual" && (
               <div>
-                <label className="block text-[14px] text-emerald-600 mb-2 font-bold tracking-wide">
+                <label className="block text-[13px] text-emerald-600 mb-2 font-bold tracking-wide">
                   Paste emails (comma or new line separated)
                 </label>
 
@@ -993,7 +1005,7 @@ const subjectCount = subject
             {/* CSV Upload */}
             {recipientMode === "file" && (
               <div>
-                <label className="block text-[14px] text-emerald-600 mb-3 font-bold tracking-wide">
+                <label className="block text-[13px] text-emerald-600 mb-3 font-bold tracking-wide">
                   Upload CSV file containing emails
                 </label>
 
