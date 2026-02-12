@@ -67,24 +67,25 @@ function buildFollowupHtml({
   `;
 }
 
-// FIXED: Properly inherit color from email body
-// campaignMailer.service.js
-
 function buildSignature(account, baseStyles = {}) {
-  const name = account.senderName || account.email?.split("@")[0] || "Sender";
+  const name =
+    account.senderName ||
+    account.email?.split("@")[0] ||
+    "Sender";
 
-  // Strictly use the passed color from baseStyles
-  const signatureColor = baseStyles.color && baseStyles.color !== 'inherit' 
-    ? baseStyles.color 
-    : "#000000";
+  const safeStyles = {
+    fontFamily: baseStyles.fontFamily || "Calibri, sans-serif",
+    fontSize: baseStyles.fontSize || "15px",
+    color: baseStyles.color || "#000000",
+  };
 
   return `
     <div style="
       margin-top:16px;
-      font-family:${baseStyles.fontFamily || 'Calibri, sans-serif'};
-      font-size:${baseStyles.fontSize || '15px'};
+      font-family:${safeStyles.fontFamily};
+      font-size:${safeStyles.fontSize};
       line-height:1.6;
-      color:${signatureColor};
+      color:${safeStyles.color};
       font-weight:bold;
     ">
       Regards,<br/>
@@ -129,12 +130,23 @@ function normalizeHtmlForEmail(html) {
 
   let cleaned = html.trim();
 
+  // Don't remove color styles - preserve them
   cleaned = cleaned.replace(/font-size:\s*(\d+)pt/gi, (match, size) => {
     const pxSize = Math.round(parseFloat(size) * 1.333);
     return `font-size:${pxSize}px`;
   });
 
-  cleaned = cleaned.replace(/<font([^>]*)>/gi, '<span$1>');
+  // Convert font tags to spans but preserve color
+  cleaned = cleaned.replace(/<font([^>]*)>/gi, (match, attributes) => {
+    // Extract color attribute if present
+    const colorMatch = attributes.match(/color="([^"]*)"/i);
+    const color = colorMatch ? `color:${colorMatch[1]};` : '';
+    
+    // Extract other attributes
+    const otherAttrs = attributes.replace(/color="([^"]*)"/gi, '');
+    
+    return `<span style="${color}${otherAttrs}">`;
+  });
   cleaned = cleaned.replace(/<\/font>/gi, '</span>');
  
   cleaned = cleaned.replace(/<div>\s*<\/div>/gi, '');
@@ -148,19 +160,34 @@ function normalizeHtmlForEmail(html) {
   return cleaned;
 }
 
-// campaignMailer.service.js
-
 function extractBaseStyles(html) {
   const fontFamilyMatch = html.match(/font-family:\s*([^;}"']+)/i);
   const fontSizeMatch = html.match(/font-size:\s*([^;}"']+)/i);
-  // Look for the last color definition which is usually the most specific to the text
-  const colorMatches = [...html.matchAll(/color:\s*([^;}"']+)/gi)];
-  const lastColor = colorMatches.length > 0 ? colorMatches[colorMatches.length - 1][1].trim() : null;
+  
+  // Better color extraction - look for color in style attributes
+  let color = '#000000';
+  
+  // Try to find color in inline styles
+  const colorStyleMatch = html.match(/style="[^"]*color:\s*([^;"]+)/i);
+  if (colorStyleMatch) {
+    color = colorStyleMatch[1].trim();
+  } else {
+    // Try to find color in span style
+    const spanColorMatch = html.match(/<span[^>]*style="[^"]*color:\s*([^;"]+)/i);
+    if (spanColorMatch) {
+      color = spanColorMatch[1].trim();
+    }
+  }
+  
+  // Ensure we have a valid color
+  if (!color || color === 'inherit') {
+    color = '#000000';
+  }
   
   return {
     fontFamily: fontFamilyMatch ? fontFamilyMatch[1].trim() : 'Calibri, sans-serif',
     fontSize: fontSizeMatch ? fontSizeMatch[1].trim() : '15px',
-    color: lastColor || '#000000'
+    color: color
   };
 }
 
@@ -314,8 +341,8 @@ export async function sendBulkCampaign(campaignId) {
 
           const baseStyles = extractBaseStyles(followupBody);
 
-          // FIXED: Only force black for transparent colors, not white
-          if (!baseStyles.color || baseStyles.color.toLowerCase() === "transparent") {
+          const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
+          if (!baseStyles.color || unsafeColors.includes(baseStyles.color.toLowerCase())) {
             baseStyles.color = "#000000";
           }
 
@@ -515,15 +542,19 @@ export async function sendBulkCampaign(campaignId) {
             let body = normalizeHtmlForEmail(rawBody);
             const baseStyles = extractBaseStyles(body);
 
-            // FIXED: Only force black for transparent colors, not white
-            if (!baseStyles.color || baseStyles.color.toLowerCase() === "transparent") {
+            const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
+            if (
+              !baseStyles.color ||
+              unsafeColors.includes(baseStyles.color.toLowerCase())
+            ) {
               baseStyles.color = "#000000";
             }
 
             const signature = buildSignature(account, baseStyles);
 
-            if (!body.includes("color:")) {
-              body = `<span style="color:#000000;">${body}</span>`;
+            // Don't force black color - preserve the user's color choice
+            if (!body.includes("color:") && baseStyles.color !== "#000000") {
+              body = `<span style="color:${baseStyles.color};">${body}</span>`;
             }
 
             const html = `<!DOCTYPE html>

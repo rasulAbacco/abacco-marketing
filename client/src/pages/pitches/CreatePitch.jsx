@@ -38,7 +38,6 @@ const FONT_FAMILIES = [
   { value: "Monaco, monospace", label: "Monaco" },
 ];
 
-// ✅ FIXED: Using px values for better email client compatibility
 const FONT_SIZES = [
   { value: "10px", label: "10" },
   { value: "11px", label: "11" },
@@ -55,11 +54,27 @@ const FONT_SIZES = [
   { value: "36px", label: "36" },
 ];
 
-const COLORS = [
-  "#000000", "#444444", "#666666", "#999999", "#CCCCCC", "#FFFFFF",
-  "#FFCCCC", "#FFCC99", "#FFFF99", "#CCFFCC", "#CCFFFF", "#9999FF", "#FF99FF",
-  "#FF0000", "#FF9900", "#0e0e0d", "#00FF00", "#00FFFF",
-  "#0000FF", "#9900FF", "#FF00FF",
+const COLOR_FAMILIES = [
+  {
+    name: "Black",
+    colors: ["#000000", "#1a1a1a", "#333333", "#4d4d4d", "#666666", "#808080", "#999999", "#b3b3b3"]
+  },
+  {
+    name: "Blue",
+    colors: ["#35516e", "#0d2741", "#007dfa", "#2189f1", "#1a8cff", "#1364b6", "#07437a", "#032442"]
+  },
+  {
+    name: "Yellow",
+    colors: ["#ffffe6", "#ffffcc", "#ffffb3", "#ffff99", "#ffff80", "#ffff66", "#ffff4d", "#ffff33"]
+  },
+  {
+    name: "Red",
+    colors: ["#521212", "#a04949", "#da8c8c", "#c25454", "#fa4f4f", "#e92424", "#e60e0e", "#920303"]
+  },
+  {
+    name: "Green",
+    colors: ["#e6ffe6", "#ccffcc", "#b3ffb3", "#99ff99", "#80ff80", "#66ff66", "#4dff4d", "#33ff33"]
+  }
 ];
 
 const applyBgColor = (color, editorRef) => {
@@ -90,7 +105,6 @@ export default function CreatePitch({ pitch, onSaved }) {
     editorRef.current?.focus();
   };
 
-  // ✅ IMPROVED: Better font size application for email compatibility
   const applyFontSize = (size) => {
     setCurrentSize(size);
 
@@ -100,14 +114,12 @@ export default function CreatePitch({ pitch, onSaved }) {
     const range = selection.getRangeAt(0);
     const selectedContent = range.extractContents();
     
-    // Create a span with inline font-size style
     const span = document.createElement('span');
     span.style.fontSize = size;
     span.appendChild(selectedContent);
     
     range.insertNode(span);
     
-    // Clean up: merge adjacent spans with same font size
     const editor = editorRef.current;
     if (editor) {
       normalizeSpans(editor);
@@ -116,24 +128,20 @@ export default function CreatePitch({ pitch, onSaved }) {
     editorRef.current?.focus();
   };
 
-  // ✅ NEW: Function to normalize and clean up span elements
   const normalizeSpans = (element) => {
     const spans = element.querySelectorAll('span');
     spans.forEach(span => {
-      // Remove empty spans
       if (!span.textContent.trim() && !span.innerHTML.trim()) {
         span.remove();
         return;
       }
 
-      // If span only has font-size and no content attributes, keep it clean
       if (span.style.length === 1 && span.style.fontSize && !span.attributes.length > 1) {
         return;
       }
     });
   };
 
-  // ✅ IMPROVED: Apply font family with better structure
   const applyFontFamily = (fontFamily) => {
     setCurrentFont(fontFamily);
     
@@ -164,19 +172,18 @@ export default function CreatePitch({ pitch, onSaved }) {
     }
   }, [pitch]);
 
-  // ✅ IMPROVED: Ensure content is wrapped properly before saving
   const handleSave = async () => {
     const editor = editorRef.current;
     if (!editor) return;
 
-    // Clean up the HTML
     normalizeSpans(editor);
 
     let html = editor.innerHTML || "";
     
-    // ✅ CRITICAL: Wrap content in a div with base styling if not already wrapped
+    // Don't force black color - preserve the user's color choice
     if (!html.trim().startsWith('<div') || !html.includes('style=')) {
-      html = `<div style="font-family: Calibri, sans-serif; font-size: 13px; line-height: 1.6; color: #000000;">${html}</div>`;
+      const currentEditorColor = currentColor || "#000000";
+      html = `<div style="font-family: Calibri, sans-serif; font-size: 13px; line-height: 1.6; color: ${currentEditorColor};">${html}</div>`;
     }
 
     const text = html.replace(/<[^>]*>/g, "").toLowerCase();
@@ -238,7 +245,6 @@ export default function CreatePitch({ pitch, onSaved }) {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-2xl p-6 border border-emerald-200 dark:border-emerald-800">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
           {pitch ? "Edit Pitch" : "Create Pitch"}
@@ -247,9 +253,7 @@ export default function CreatePitch({ pitch, onSaved }) {
       </div>
 
       <div className="grid grid-cols-12 gap-6">
-        {/* LEFT */}
         <div className="col-span-12 space-y-5">
-          {/* Pitch Name */}
           <div className="bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 shadow-lg">
             <label className="text-sm font-medium block mb-2 text-slate-700 dark:text-slate-300">Pitch Name</label>
             <input
@@ -260,7 +264,6 @@ export default function CreatePitch({ pitch, onSaved }) {
             />
           </div>
 
-          {/* Pitch Type */}
           <div className="bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 shadow-lg">
             <label className="text-sm font-medium block mb-2 text-slate-700 dark:text-slate-300">Pitch Type</label>
             <select
@@ -273,9 +276,7 @@ export default function CreatePitch({ pitch, onSaved }) {
             </select>
           </div>
 
-          {/* Editor */}
           <div className="bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 rounded-xl overflow-hidden shadow-lg">
-            {/* Toolbar */}
             <div className="bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 border-b border-emerald-200 dark:border-emerald-800 p-3 flex flex-wrap gap-2 items-center">
               <select
                 value={currentFont}
@@ -325,7 +326,6 @@ export default function CreatePitch({ pitch, onSaved }) {
 
               <Btn icon={<Minus size={16} />} onClick={() => format("insertHorizontalRule")} />
 
-              {/* Text Color */}
               <div className="relative">
                 <button 
                   onClick={() => setShowColors(!showColors)} 
@@ -336,23 +336,36 @@ export default function CreatePitch({ pitch, onSaved }) {
                 </button>
 
                 {showColors && (
-                  <div className="absolute bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-700 p-3 rounded-xl grid grid-cols-6 gap-2 z-50 shadow-xl">
-                    {COLORS.map(c => (
-                      <button
-                        key={c}
-                        style={{ background: c }}
-                        className="w-6 h-6 rounded-lg border border-slate-300 dark:border-slate-600 hover:scale-110 transition-transform"
-                        onClick={() => {
-                          format("foreColor", c);
-                          setShowColors(false);
-                        }}
-                      />
+                  <div
+                      className="absolute right-0 mt-2 bg-white dark:bg-slate-800 
+                                    border border-emerald-200 dark:border-emerald-700 
+                                    p-3 rounded-xl z-50 shadow-xl"
+                          style={{ width: "280px" }}
+                    >
+                    {COLOR_FAMILIES.map((family, familyIndex) => (
+                      <div key={family.name} className={familyIndex > 0 ? "mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-700" : ""}>
+                        <div className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">{family.name}</div>
+                        <div className="grid grid-cols-8 gap-1">
+                          {family.colors.map((color, colorIndex) => (
+                            <button
+                              key={`${family.name}-${colorIndex}`}
+                              style={{ backgroundColor: color }}
+                              className="w-6 h-6 rounded border border-slate-300 dark:border-slate-600 hover:scale-110 transition-transform"
+                              onClick={() => {
+                                format("foreColor", color);
+                                setShowColors(false);
+                                setCurrentColor(color);
+                              }}
+                              title={color}
+                            />
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Background Color */}
               <div className="relative">
                 <button
                   onClick={() => setShowBgColors(!showBgColors)}
@@ -363,24 +376,31 @@ export default function CreatePitch({ pitch, onSaved }) {
                 </button>
 
                 {showBgColors && (
-                  <div className="absolute bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-700 p-3 rounded-xl grid grid-cols-6 gap-2 z-50 shadow-xl">
-                    {COLORS.map(c => (
-                      <button
-                        key={c}
-                        style={{ background: c }}
-                        className="w-6 h-6 rounded-lg border border-slate-300 dark:border-slate-600 hover:scale-110 transition-transform"
-                        onClick={() => {
-                          applyBgColor(c, editorRef);
-                          setShowBgColors(false);
-                        }}
-                      />
+                  <div className="absolute right-0 bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-700 p-3 rounded-xl z-50 shadow-xl" style={{ width: "280px" }}>
+                    {COLOR_FAMILIES.map((family, familyIndex) => (
+                      <div key={family.name} className={familyIndex > 0 ? "mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-700" : ""}>
+                        <div className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">{family.name}</div>
+                        <div className="grid grid-cols-8 gap-1">
+                          {family.colors.map((color, colorIndex) => (
+                            <button
+                              key={`${family.name}-${colorIndex}`}
+                              style={{ backgroundColor: color }}
+                              className="w-6 h-6 rounded border border-slate-300 dark:border-slate-600 hover:scale-110 transition-transform"
+                              onClick={() => {
+                                applyBgColor(color, editorRef);
+                                setShowBgColors(false);
+                              }}
+                              title={color}
+                            />
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Body */}
             <div
               ref={editorRef}
               contentEditable
@@ -393,7 +413,6 @@ export default function CreatePitch({ pitch, onSaved }) {
               }}
             />
 
-            {/* Footer */}
             <div className="border-t border-emerald-200 dark:border-emerald-800 bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 p-4 gap-3 flex justify-end">
               <button
                 onClick={() => setShowPreview(!showPreview)}
@@ -412,7 +431,6 @@ export default function CreatePitch({ pitch, onSaved }) {
             </div>
           </div>
 
-          {/* Preview */}
           {showPreview && (
             <div className="bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6 shadow-lg">
               <h3 className="text-sm font-semibold mb-4 text-slate-700 dark:text-slate-300 flex items-center gap-2">
