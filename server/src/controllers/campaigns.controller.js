@@ -100,6 +100,8 @@ export const createCampaign = async (req, res) => {
       where: { id: { in: fromAccountIds } }
     });
 
+    // 🔥 Calculate fixed estimated completion time
+
     const SAFE_LIMITS = {
       gmail: 50,
       gsuite: 80,
@@ -108,22 +110,27 @@ export const createCampaign = async (req, res) => {
       custom: 60
     };
 
-    let totalCapacity = 0;
+    let totalHourlyCapacity = 0;
 
     for (const acc of accounts) {
-      const key = (acc.provider || "custom").toLowerCase();
-      
-      let limit = SAFE_LIMITS[key] || SAFE_LIMITS.custom;
-      
+      const provider = (acc.provider || "custom").toLowerCase();
+      let limit = SAFE_LIMITS[provider] || SAFE_LIMITS.custom;
+
       if (customLimits && customLimits[acc.id]) {
         limit = customLimits[acc.id];
       }
-      
-      totalCapacity += limit;
+
+      totalHourlyCapacity += limit;
     }
 
-    if (recipients.length > totalCapacity) {
-      console.log(`⚠️ Recipients (${recipients.length}) exceed hourly capacity (${totalCapacity}). Will send in batches.`);
+    const hoursNeeded = recipients.length / totalHourlyCapacity;
+    const estimatedMs = hoursNeeded * 60 * 60 * 1000;
+
+    const estimatedCompletion = new Date(Date.now() + estimatedMs);
+
+
+   if (recipients.length > totalHourlyCapacity) {
+      console.log(`⚠️ Recipients (${recipients.length}) exceed hourly capacity (${totalHourlyCapacity}). Will send in batches.`);
     }
 
     // 4️⃣ Auto-generate unique campaign name
@@ -199,6 +206,7 @@ export const createCampaign = async (req, res) => {
         name: finalName,
         bodyHtml,
         sendType,
+        estimatedCompletion,
 
         // ✅ scheduledAt ONLY for scheduled campaigns
         scheduledAt:
@@ -804,10 +812,13 @@ export const getCampaignProgress = async (req, res) => {
         limit = customLimits[acc.id];
       }
 
-      const delayPerMail = (60 * 60 * 1000) / limit;
-      const remainingMs = row.processing * delayPerMail;
+      const total = row.processing + row.completed;
 
-      row.eta = formatDuration(remainingMs);
+      const totalHoursNeeded = total / limit;
+      const totalMsNeeded = totalHoursNeeded * 60 * 60 * 1000;
+
+      row.eta = formatDuration(totalMsNeeded);
+
     }
 
     // ✅ Return Fast Response

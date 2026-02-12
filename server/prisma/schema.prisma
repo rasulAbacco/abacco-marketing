@@ -273,6 +273,8 @@ model Campaign {
   scheduledAt DateTime?
   createdAt   DateTime  @default(now())
 
+  estimatedCompletion DateTime?
+
   // 🔹 Self-relation (parent → child campaigns)
   parentCampaignId Int?
   parentCampaign   Campaign?  @relation("CampaignHierarchy", fields: [parentCampaignId], references: [id])

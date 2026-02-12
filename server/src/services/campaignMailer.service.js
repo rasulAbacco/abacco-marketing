@@ -1,4 +1,5 @@
-// FIXED: campaignMailer.service.js with proper email formatting
+// FIXED: campaignMailer.service.js - Complete follow-up fix
+// This ensures follow-ups send with the exact structure shown in preview
 
 import nodemailer from "nodemailer";
 import prisma from "../prismaClient.js";
@@ -23,6 +24,7 @@ function distribute(items, total) {
   return shuffle(result);
 }
 
+// ✅ This builds the exact structure shown in preview
 function buildFollowupHtml({
   followUpBody,
   originalBody,
@@ -34,7 +36,7 @@ function buildFollowupHtml({
   return `
     <div>
       
-      <!-- Follow-up (top) -->
+      <!-- Follow-up message (top) -->
       <div>
         ${followUpBody}
       </div>
@@ -42,7 +44,7 @@ function buildFollowupHtml({
       <br />
       <hr style="border:none;border-top:1px solid #ccc;margin:16px 0;" />
 
-      <!-- Thread header -->
+      <!-- Thread header (From, Sent, To, Subject) -->
       <div style="font-size:13px; line-height:1.5; font-family: Calibri, sans-serif;">
         <b>From:</b> ${from}<br/>
         <b>Sent:</b> ${sentAt}<br/>
@@ -65,41 +67,36 @@ function buildFollowupHtml({
   `;
 }
 
-// ✅ FIXED: Signature now inherits styles properly - no hardcoded black color
-function buildSignature(account, baseStyles = {}) {
-  const name =
-    account.senderName ||
-    account.email?.split("@")[0] ||
-    "Sender";
+// FIXED: Properly inherit color from email body
+// campaignMailer.service.js
 
-  const safeStyles = {
-    fontFamily: baseStyles.fontFamily || "Calibri, sans-serif",
-    fontSize: baseStyles.fontSize || "15px",
-    color: baseStyles.color || "#000000",
-  };
+function buildSignature(account, baseStyles = {}) {
+  const name = account.senderName || account.email?.split("@")[0] || "Sender";
+
+  // Strictly use the passed color from baseStyles
+  const signatureColor = baseStyles.color && baseStyles.color !== 'inherit' 
+    ? baseStyles.color 
+    : "#000000";
 
   return `
     <div style="
       margin-top:16px;
-      font-family:${safeStyles.fontFamily};
-      font-size:${safeStyles.fontSize};
+      font-family:${baseStyles.fontFamily || 'Calibri, sans-serif'};
+      font-size:${baseStyles.fontSize || '15px'};
       line-height:1.6;
-      color:${safeStyles.color};
+      color:${signatureColor};
       font-weight:bold;
     ">
       Regards,<br/>
       ${name} - Marketing Analyst
     </div>
   `;
-  
 }
-
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// 🔥 Default limits
 const SAFE_LIMITS = {
   gmail: 50,
   gsuite: 80,
@@ -127,47 +124,43 @@ function getDomainLabel(email = "") {
   return domain.split(".")[0] || "client";
 }
 
-// ✅ NEW: Convert all styles to inline and ensure email compatibility
 function normalizeHtmlForEmail(html) {
   if (!html) return html;
 
   let cleaned = html.trim();
 
-  // Convert pt to px
   cleaned = cleaned.replace(/font-size:\s*(\d+)pt/gi, (match, size) => {
     const pxSize = Math.round(parseFloat(size) * 1.333);
     return `font-size:${pxSize}px`;
   });
 
-  // Convert font tags
   cleaned = cleaned.replace(/<font([^>]*)>/gi, '<span$1>');
   cleaned = cleaned.replace(/<\/font>/gi, '</span>');
  
-  // Remove empty blocks
   cleaned = cleaned.replace(/<div>\s*<\/div>/gi, '');
   cleaned = cleaned.replace(/<div><br><\/div>/gi, '<br>');
   cleaned = cleaned.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
 
-  // Force Outlook-safe paragraph spacing
   cleaned = cleaned.replace(/<p([^>]*)>/gi, 
     '<p$1 style="margin:0; padding:0; mso-margin-top-alt:0; mso-margin-bottom-alt:0; line-height:1.4;">'
   );
 
-
   return cleaned;
 }
 
+// campaignMailer.service.js
 
-// ✅ NEW: Extract base font properties from HTML content for signature inheritance
 function extractBaseStyles(html) {
   const fontFamilyMatch = html.match(/font-family:\s*([^;}"']+)/i);
   const fontSizeMatch = html.match(/font-size:\s*([^;}"']+)/i);
-  const colorMatch = html.match(/color:\s*([^;}"']+)/i);
+  // Look for the last color definition which is usually the most specific to the text
+  const colorMatches = [...html.matchAll(/color:\s*([^;}"']+)/gi)];
+  const lastColor = colorMatches.length > 0 ? colorMatches[colorMatches.length - 1][1].trim() : null;
   
   return {
     fontFamily: fontFamilyMatch ? fontFamilyMatch[1].trim() : 'Calibri, sans-serif',
     fontSize: fontSizeMatch ? fontSizeMatch[1].trim() : '15px',
-    color: colorMatch ? colorMatch[1].trim() : '#000000'
+    color: lastColor || '#000000'
   };
 }
 
@@ -181,6 +174,7 @@ export async function sendBulkCampaign(campaignId) {
     console.log("⏭️ Campaign already handled:", campaignId);
     return;
   }
+  
   console.log("📦 Campaign loaded:", {
     id: campaign?.id,
     status: campaign?.status,
@@ -189,6 +183,7 @@ export async function sendBulkCampaign(campaignId) {
   });
 
   if (!campaign) throw new Error("Campaign not found");
+  
   await prisma.campaign.update({
     where: { id: campaignId },
     data: { status: "sending" }
@@ -238,15 +233,6 @@ export async function sendBulkCampaign(campaignId) {
     return;
   }
 
-  // ---------------- original body for followup ----------------
-  let originalBodyHtml = "";
-  if (campaign.sendType === "followup" && campaign.parentCampaignId) {
-    const baseCampaign = await prisma.campaign.findUnique({
-      where: { id: campaign.parentCampaignId }
-    });
-    originalBodyHtml = baseCampaign?.bodyHtml || "";
-  }
-
   // ============================================================
   // ================= FOLLOW-UP FLOW ============================
   // ============================================================
@@ -257,7 +243,6 @@ export async function sendBulkCampaign(campaignId) {
     const pitchPlan = pitchBodies.length
       ? distribute(pitchBodies, recipients.length)
       : distribute([campaign.bodyHtml], recipients.length);
-
 
     const grouped = {};
     for (const r of recipients) {
@@ -277,7 +262,6 @@ export async function sendBulkCampaign(campaignId) {
       const delayPerEmail = (60 * 60 * 1000) / limit;
 
       let smtpPassword = account.encryptedPass;
-
       if (typeof smtpPassword === "string" && smtpPassword.includes(":")) {
         smtpPassword = decrypt(smtpPassword);
       }
@@ -288,7 +272,7 @@ export async function sendBulkCampaign(campaignId) {
         host: account.smtpHost,
         port: Number(account.smtpPort),
         secure: Number(account.smtpPort) === 465,
-        name: domain,  
+        name: domain,
         auth: {
           user: account.smtpUser || account.email,
           pass: smtpPassword,
@@ -302,58 +286,69 @@ export async function sendBulkCampaign(campaignId) {
 
       const fromEmail = account.smtpUser || account.email;
 
-      for (const recipient of group) {
+      // ✅ ADD RATE LIMITING
+      let accountSendCount = 0;
+      let accountStartTime = Date.now();
+
+      for (let i = 0; i < group.length; i++) {
+        const r = group[i];
+
         try {
-          const followupBodyRaw = pitchPlan[group.indexOf(recipient)];
+          // ✅ RATE LIMIT CHECK
+          if (accountSendCount >= limit) {
+            const timeSinceStart = Date.now() - accountStartTime;
+
+            if (timeSinceStart < 60 * 60 * 1000) {
+              const waitTime = (60 * 60 * 1000) - timeSinceStart;
+              console.log(`⏳ ${account.email} limit reached. Waiting ${Math.ceil(waitTime / 60000)} minutes...`);
+              await sleep(waitTime);
+            }
+
+            accountSendCount = 0;
+            accountStartTime = Date.now();
+          }
+
+          // Get follow-up body for this recipient
+          const followupBodyRaw = pitchPlan[i];
           const followupBody = normalizeHtmlForEmail(followupBodyRaw);
 
           const baseStyles = extractBaseStyles(followupBody);
 
-          const signature = buildSignature(account, baseStyles);
-
-          const followupWithSignature = followupBody + signature;
-
-
-          let originalWithSignature =
-            recipient.sentBodyHtml ||
-            originalBodyHtml ||
-            "";
-
-          if (recipient.accountId) {
-            const originalAccount = await prisma.emailAccount.findUnique({
-              where: { id: recipient.accountId }
-            });
-
-            if (originalAccount) {
-              const originalSignature = buildSignature(originalAccount);
-
-              if (!originalWithSignature.includes("Regards")) {
-                originalWithSignature += originalSignature;
-              }
-            }
+          // FIXED: Only force black for transparent colors, not white
+          if (!baseStyles.color || baseStyles.color.toLowerCase() === "transparent") {
+            baseStyles.color = "#000000";
           }
 
-          const originalDate = recipient.sentAt || new Date();
+          const signature = buildSignature(account, baseStyles);
+          const followupWithSignature = followupBody + signature;
+
+          // ✅ Get ACTUAL sent email data from recipient record
+          let originalBodyHtml = r.sentBodyHtml || "";
+          const originalSubject = r.sentSubject || subjects[0];
+          const originalFrom = r.sentFromEmail || account.email;
+          
+          // Format the sent date
+          const originalDate = r.sentAt ? new Date(r.sentAt) : new Date();
           const sentAt = originalDate.toLocaleString("en-US", {
-            weekday: "short",
-            year: "numeric",
-            month: "short",
+            month: "numeric",
             day: "numeric",
+            year: "numeric",
             hour: "2-digit",
             minute: "2-digit",
+            second: "2-digit",
+            hour12: false
           });
 
-          // const followupWithSignature = pitchPlan[group.indexOf(recipient)] + signature;
+          // ✅ Build threaded email with exact preview structure
           const threadedHtml = buildFollowupHtml({
             followUpBody: followupWithSignature,
-            originalBody: originalWithSignature,
-            from: account.email,
-            to: recipient.email,
-            sentAt,
-            subject: recipient.sentSubject || ""
+            originalBody: originalBodyHtml,
+            from: originalFrom,
+            to: r.email,
+            sentAt: sentAt,
+            subject: originalSubject
           });
 
-          // ✅ FIXED: Proper email HTML structure
           const html = `<!DOCTYPE html>
           <html>
           <head>
@@ -366,36 +361,55 @@ export async function sendBulkCampaign(campaignId) {
           </html>
           `;
 
+          // ✅ Subject should be "Re: original subject"
+          const label = getDomainLabel(r.email);
+          const subject = `Re: ${label} - ${originalSubject}`;
+
           await transporter.sendMail({
             from: account.senderName
               ? `"${account.senderName}" <${fromEmail}>`
               : fromEmail,
-            to: recipient.email,
-            subject: recipient.sentSubject || "RE: Previous email",
+            to: r.email,
+            subject: subject,
             html,
           });
 
           await prisma.campaignRecipient.update({
-            where: { id: recipient.id },
+            where: { id: r.id },
             data: { status: "sent", sentAt: new Date() }
           });
 
-          console.log(`✅ Follow-up sent to ${recipient.email}`);
+          accountSendCount++;
+
+          console.log(`✅ [FOLLOWUP] ${account.email} → ${r.email} (${accountSendCount}/${limit})`);
 
           await sleep(delayPerEmail);
 
         } catch (err) {
-          console.error(`❌ Failed to send to ${recipient.email}:`, err.message);
+          console.error(`❌ Failed followup to ${r.email}:`, err.message);
 
           await prisma.campaignRecipient.update({
-            where: { id: recipient.id },
+            where: { id: r.id },
             data: { status: "failed", error: err.message }
           });
 
-          console.log("Campaign stopping due to error:", err.message);
-          
-          await updateCampaignStatus(campaignId); 
-          return; 
+          // Stop if authentication failed
+          if (
+            err.message.includes("Invalid login") ||
+            err.message.includes("authentication failed")
+          ) {
+            await prisma.campaign.update({
+              where: { id: campaignId },
+              data: { 
+                status: "failed",
+                error: `Authentication failed for ${account.email}` 
+              }
+            });
+
+            console.log("Campaign stopping due to error:", err.message);
+            await updateCampaignStatus(campaignId); 
+            return; 
+          }
         }
       }
     }
@@ -422,46 +436,33 @@ export async function sendBulkCampaign(campaignId) {
       ? distribute(pitchBodies, recipients.length)
       : null;
 
-    const accountSendCount = {};
-    const accountLastSendTime = {};
+    const grouped = {};
 
     for (let i = 0; i < recipients.length; i++) {
-      const recipient = recipients[i];
-      const rawSubject = subjectPlan[i];
-      const label = getDomainLabel(recipient.email);
-      const subject = `${label} - ${rawSubject}`;
-
       const accountId = fromPlan[i];
 
-      try {
+      if (!grouped[accountId]) grouped[accountId] = [];
+
+      grouped[accountId].push({
+        recipient: recipients[i],
+        rawSubject: subjectPlan[i],
+        body: pitchPlan ? pitchPlan[i] : campaign.bodyHtml
+      });
+    }
+
+    await Promise.all(
+      Object.entries(grouped).map(async ([accountId, list]) => {
+
         const account = await prisma.emailAccount.findUnique({
-          where: { id: accountId }
+          where: { id: Number(accountId) }
         });
-        if (!account) continue;
+
+        if (!account) return;
 
         const limit = getLimit(account.provider, account.id, customLimits);
         const delayPerEmail = (60 * 60 * 1000) / limit;
 
-        if (!accountSendCount[accountId]) {
-          accountSendCount[accountId] = 0;
-          accountLastSendTime[accountId] = Date.now();
-        }
-
-        if (accountSendCount[accountId] >= limit) {
-          const timeSinceFirstSend = Date.now() - accountLastSendTime[accountId];
-          
-          if (timeSinceFirstSend < 60 * 60 * 1000) {
-            const waitTime = (60 * 60 * 1000) - timeSinceFirstSend;
-            console.log(`⏳ Account ${account.email} reached limit. Waiting ${Math.ceil(waitTime / 1000 / 60)} minutes...`);
-            await sleep(waitTime);
-          }
-          
-          accountSendCount[accountId] = 0;
-          accountLastSendTime[accountId] = Date.now();
-        }
-
         let smtpPassword = account.encryptedPass;
-
         if (typeof smtpPassword === "string" && smtpPassword.includes(":")) {
           smtpPassword = decrypt(smtpPassword);
         }
@@ -472,7 +473,7 @@ export async function sendBulkCampaign(campaignId) {
           host: account.smtpHost,
           port: Number(account.smtpPort),
           secure: Number(account.smtpPort) === 465,
-          name: domain,  
+          name: domain,
           auth: {
             user: account.smtpUser || account.email,
             pass: smtpPassword,
@@ -485,150 +486,135 @@ export async function sendBulkCampaign(campaignId) {
         });
 
         const fromEmail = account.smtpUser || account.email;
-         
-        let body = pitchPlan ? pitchPlan[i] : campaign.bodyHtml;
 
-        // Normalize
-        body = normalizeHtmlForEmail(body);
+        let accountSendCount = 0;
+        let accountStartTime = Date.now();
 
-        // Extract base styles
-        const baseStyles = extractBaseStyles(body);
+        for (let i = 0; i < list.length; i++) {
 
-        // Safety color fix
-        const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
+          const { recipient, rawSubject, body: rawBody } = list[i];
 
-        if (
-          !baseStyles.color ||
-          unsafeColors.includes(baseStyles.color.toLowerCase())
-        ) {
-          baseStyles.color = "#000000";
+          const label = getDomainLabel(recipient.email);
+          const subject = `${label} - ${rawSubject}`;
+
+          try {
+
+            if (accountSendCount >= limit) {
+              const timeSinceStart = Date.now() - accountStartTime;
+
+              if (timeSinceStart < 60 * 60 * 1000) {
+                const waitTime = (60 * 60 * 1000) - timeSinceStart;
+                console.log(`⏳ ${account.email} limit reached. Waiting ${Math.ceil(waitTime / 60000)} minutes...`);
+                await sleep(waitTime);
+              }
+
+              accountSendCount = 0;
+              accountStartTime = Date.now();
+            }
+
+            let body = normalizeHtmlForEmail(rawBody);
+            const baseStyles = extractBaseStyles(body);
+
+            // FIXED: Only force black for transparent colors, not white
+            if (!baseStyles.color || baseStyles.color.toLowerCase() === "transparent") {
+              baseStyles.color = "#000000";
+            }
+
+            const signature = buildSignature(account, baseStyles);
+
+            if (!body.includes("color:")) {
+              body = `<span style="color:#000000;">${body}</span>`;
+            }
+
+            const html = `<!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+              <style>
+                body { margin:0; padding:0; }
+                table { border-collapse: collapse; }
+                p { margin:0 !important; padding:0 !important; line-height:1.6 !important; }
+                div { margin:0; padding:0; }
+                .ExternalClass p { margin:0 !important; }
+              </style>
+
+              <!--[if mso]>
+              <style>
+                p { margin:0 !important; line-height:1.6 !important; }
+              </style>
+              <![endif]-->
+            </head>
+
+            <body style="margin:0; padding:0; background-color:#ffffff;">
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+                style="border-collapse:collapse; background-color:#ffffff;">
+
+                <tr>
+                  <td style="padding:20px; background-color:#ffffff;">
+
+                    <div style="
+                      font-family:${baseStyles.fontFamily};
+                      font-size:${baseStyles.fontSize};
+                      color:${baseStyles.color};
+                      line-height:1.4;
+                      mso-line-height-rule:exactly;
+                    ">
+                      ${body}
+                      ${signature}
+                    </div>
+
+                  </td>
+                </tr>
+
+              </table>
+
+            </body>
+            </html>`;
+
+            await transporter.sendMail({
+              from: account.senderName
+                ? `"${account.senderName}" <${fromEmail}>`
+                : fromEmail,
+              to: recipient.email,
+              subject,
+              html
+            });
+
+            // ✅ CRITICAL FIX: Store the actual sent content for follow-ups
+            await prisma.campaignRecipient.update({
+              where: { id: recipient.id },
+              data: { 
+                status: "sent", 
+                sentAt: new Date(), 
+                accountId: account.id,
+                sentBodyHtml: html,           // ✅ Store full HTML
+                sentSubject: rawSubject,      // ✅ Store subject (without label)
+                sentFromEmail: fromEmail      // ✅ Store from email
+              }
+            });
+
+            accountSendCount++;
+
+            console.log(`✅ ${account.email} → ${recipient.email} (${accountSendCount}/${limit})`);
+
+            await sleep(delayPerEmail);
+
+          } catch (err) {
+
+            console.error(`❌ Failed to send to ${recipient.email}:`, err.message);
+
+            await prisma.campaignRecipient.update({
+              where: { id: recipient.id },
+              data: { status: "failed", error: err.message }
+            });
+          }
         }
-
-        // Build signature AFTER baseStyles exists
-        const signature = buildSignature(account, baseStyles);
-
-
-        
-        // ✅ ENSURE body has color - wrap in span if needed
-          // Ensure text is never invisible
-        if (!body.includes("color:")) {
-          body = `<span style="color:#000000;">${body}</span>`;
-        }
-
-        // ✅ CRITICAL FIX: Outlook-safe HTML with proper inline styles
-        const html = `<!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta http-equiv="X-UA-Compatible" content="IE=edge">
-
-            <style>
-              body {
-                margin: 0;
-                padding: 0;
-              }
-
-              table {
-                border-collapse: collapse;
-              }
-
-              p {
-                margin: 0 !important;
-                padding: 0 !important;
-                line-height: 1.6 !important;
-              }
-
-              div {
-                margin: 0;
-                padding: 0;
-              }
-
-              /* Outlook specific */
-              .ExternalClass p {
-                margin: 0 !important;
-              }
-            </style>
-
-            <!--[if mso]>
-            <style>
-              p {
-                margin: 0 !important;
-                line-height: 1.6 !important;
-              }
-            </style>
-            <![endif]-->
-          </head>
-
-          <body style="margin:0; padding:0; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; background-color:#ffffff;">
-
-            <!-- ✅ Outlook requires table structure -->
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
-              style="border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; background-color:#ffffff;">
-
-              <tr>
-                <td style="padding:20px; background-color:#ffffff;">
-
-                  <!-- Content Wrapper with base styles -->
-                  <div style="
-                    font-family: ${baseStyles.fontFamily};
-                    font-size: ${baseStyles.fontSize};
-                    color: ${baseStyles.color};
-                    line-height: 1.4;
-                    mso-line-height-rule: exactly;
-
-                  ">
-
-
-                    ${body}
-
-                    ${signature}
-
-                  </div>
-
-                </td>
-              </tr>
-
-            </table>
-
-          </body>
-          </html>`;
-
-
-        await transporter.sendMail({
-          from: account.senderName
-            ? `"${account.senderName}" <${fromEmail}>`
-            : fromEmail,
-          to: recipient.email,
-          subject,
-          html
-        });
-
-        await prisma.campaignRecipient.update({
-          where: { id: recipient.id },
-          data: { status: "sent", sentAt: new Date(), accountId: account.id }
-        });
-
-        accountSendCount[accountId]++;
-
-        console.log(`✅ Sent ${accountSendCount[accountId]}/${limit} to ${recipient.email} (Account: ${account.email})`);
-
-        await sleep(delayPerEmail);
-
-      } catch (err) {
-        console.error(`❌ Failed to send to ${recipient.email}:`, err.message);
-
-        await prisma.campaignRecipient.update({
-          where: { id: recipient.id },
-          data: { status: "failed", error: err.message }
-        });
-
-        console.log("Campaign stopping due to error:", err.message);
-        
-        await updateCampaignStatus(campaignId); 
-        return; 
-      }
-    }
+      })
+    );
   }
 
   await updateCampaignStatus(campaignId);

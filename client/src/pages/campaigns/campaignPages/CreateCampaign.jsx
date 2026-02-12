@@ -130,40 +130,28 @@ const applyFontSize = (size) => {
 };
 
 
-  const applyColor = (color) => {
-    setCurrentColor(color);
-    
-    const selection = window.getSelection();
-    if (!selection.rangeCount) {
-      // No selection, apply to whole editor
-      if (editorRef.current) {
-        editorRef.current.style.color = color;
-      }
-      setShowColorPicker(false);
-      return;
-    }
+// CreateCampaign.jsx
 
-    const range = selection.getRangeAt(0);
-    
-    // If nothing selected, apply to editor
-    if (range.collapsed) {
-      if (editorRef.current) {
-        editorRef.current.style.color = color;
-      }
-      setShowColorPicker(false);
-      return;
+const applyColor = (color) => {
+  setCurrentColor(color);
+  
+  const selection = window.getSelection();
+  if (!selection.rangeCount || selection.isCollapsed) {
+    // If no selection, wrap existing content or set editor style
+    if (editorRef.current) {
+      editorRef.current.style.color = color;
+      // Force a wrapper so the backend regex finds the color:
+      document.execCommand('foreColor', false, color);
     }
-
-    // Apply color to selected text
-    const selectedContent = range.extractContents();
-    const span = document.createElement('span');
-    span.style.color = color;
-    span.appendChild(selectedContent);
-    range.insertNode(span);
-    
     setShowColorPicker(false);
-    editorRef.current?.focus();
-  };
+    return;
+  }
+
+  // Standard application for selected text
+  document.execCommand('foreColor', false, color);
+  setShowColorPicker(false);
+  editorRef.current?.focus();
+};
 
   const insertLink = () => {
     const url = prompt("Enter URL:");
