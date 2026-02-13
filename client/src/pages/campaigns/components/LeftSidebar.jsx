@@ -12,7 +12,11 @@ import {
   ChevronDown,
   User,
   Settings,
+  FileEdit, // ✅ NEW: Draft icon
 } from "lucide-react";
+import { api } from "../../utils/api";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function ModernSidebar({
   accounts = [],
@@ -23,24 +27,63 @@ export default function ModernSidebar({
   onAddAccount,
   isCollapsed: externalCollapsed,
   onToggleCollapse,
-  unreadRefreshKey ,
+  unreadRefreshKey,
   refreshKey 
 }) {
   const [isCollapsed, setIsCollapsed] = useState(externalCollapsed || false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedAccounts, setExpandedAccounts] = useState({});
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [accountsWithUnread, setAccountsWithUnread] = useState(accounts);
 
+  // ✅ Fetch unread counts for all accounts
+  const fetchUnreadCounts = async () => {
+    try {
+      // Update unread counts for all accounts
+      const updatedAccounts = await Promise.all(
+        accounts.map(async (account) => {
+          try {
+            const res = await api.get(
+              `${API_BASE_URL}/api/inbox/accounts/${account.id}/unread`
+            );
+            return {
+              ...account,
+              unreadCount: res.data?.data?.inboxUnread || 0,
+            };
+          } catch (err) {
+            console.error(`Failed to fetch unread for ${account.email}:`, err);
+            return { ...account, unreadCount: 0 };
+          }
+        })
+      );
 
-  const fetchSidebarCounts = async () => {
-  try {
-    const res = await api.get("/inbox/sidebar-counts"); // use your real API route
-    setCounts(res.data);
-  } catch (error) {
-    console.error("Failed to fetch sidebar counts", error);
-  }
-};
+      setAccountsWithUnread(updatedAccounts);
+    } catch (err) {
+      console.error("Failed to fetch unread counts:", err);
+    }
+  };
 
+  // ✅ Refresh unread counts when accounts change
+  useEffect(() => {
+    if (accounts.length > 0) {
+      setAccountsWithUnread(accounts);
+    }
+  }, [accounts]);
+
+  // ✅ CRITICAL: Refresh unread counts when unreadRefreshKey changes
+  useEffect(() => {
+    if (unreadRefreshKey !== undefined) {
+      console.log("🔄 Refreshing unread counts due to unreadRefreshKey change");
+      fetchUnreadCounts();
+    }
+  }, [unreadRefreshKey]);
+
+  // ✅ Also refresh on general refreshKey
+  useEffect(() => {
+    if (refreshKey !== undefined) {
+      console.log("🔄 Refreshing unread counts due to refreshKey change");
+      fetchUnreadCounts();
+    }
+  }, [refreshKey]);
 
   useEffect(() => {
     if (externalCollapsed !== undefined) {
@@ -63,41 +106,18 @@ export default function ModernSidebar({
     }));
   };
 
+  // ✅ UPDATED: Added Draft folder
   const folders = [
     { id: "inbox", label: "Inbox", icon: Inbox, color: "text-emerald-600" },
     { id: "sent", label: "Sent", icon: Send, color: "text-teal-600" },
     { id: "spam", label: "Spam", icon: AlertOctagon, color: "text-orange-600" },
+    { id: "draft", label: "Drafts", icon: FileEdit, color: "text-blue-600" },
     { id: "trash", label: "Trash", icon: Trash2, color: "text-red-600" },
   ];
 
-  const filteredAccounts = accounts.filter((acc) =>
+  const filteredAccounts = accountsWithUnread.filter((acc) =>
     acc.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const fetchUnreadCount = async () => {
-    if (!selectedAccount?.id) return;
-
-    try {
-      const res = await axios.get(
-        `/api/inbox/accounts/${selectedAccount.id}/unread`
-      );
-
-      if (res.data.success) {
-        setUnreadCount(res.data.data.inboxUnread);
-      }
-    } catch (err) {
-      console.error("Unread fetch error:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchUnreadCount();
-  }, [selectedAccount, unreadRefreshKey]);
-
-  useEffect(() => {
-    fetchSidebarCounts();   // your API call for unread counts
-  }, [refreshKey]);
-
 
   return (
     <div
@@ -241,7 +261,7 @@ export default function ModernSidebar({
       {/* Collapsed View - Just Icons */}
       {isCollapsed && (
         <div className="flex-1 flex flex-col items-center py-4 space-y-4">
-          {accounts.slice(0, 5).map((account) => (
+          {accountsWithUnread.slice(0, 5).map((account) => (
             <button
               key={account.id}
               onClick={() => {

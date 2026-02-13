@@ -1,4 +1,4 @@
-// ✅ EmailList.jsx  
+// ✅ EmailList.jsx - FIXED VERSION
 import React, { useState, useEffect, useRef } from "react";
 import { Mail, ChevronDown, ChevronUp, Users, Globe, Zap, MoreVertical, Trash2, Check, X } from "lucide-react";
 import { api } from "../../utils/api"; 
@@ -170,12 +170,13 @@ export default function ConversationList({
     if (!confirm(`Delete ${selectedConversations.length} conversation(s)?`)) return;
 
     try {
-      for (const conv of selectedConversations) {
-        await api.patch(`${API_BASE_URL}/api/inbox/hide-inbox-conversation`, {
-          conversationId: conv.conversationId,
-          accountId: selectedAccount.id,
-        });
-      }
+      // ✅ BATCH DELETE - all at once instead of loop
+      const conversationIds = selectedConversations.map(c => c.conversationId);
+      
+      await api.patch(`${API_BASE_URL}/api/inbox/batch-hide-conversations`, {
+        conversationIds,
+        accountId: selectedAccount.id,
+      });
 
       setConversations((prev) =>
         prev.filter((c) => !selectedConversations.some((sc) => sc.conversationId === c.conversationId))
@@ -184,9 +185,13 @@ export default function ConversationList({
       setSelectAll(false);
       setSelectionMode(false);
       setShowMoreMenu(false);
-      onUnreadChange?.(); 
+      
+      // ✅ Trigger unread count refresh
+      if (onUnreadChange) {
+        onUnreadChange();
+      }
     } catch (err) {
-      console.error("Failed to delete:", err);
+      console.error("Delete failed:", err);
       alert("Failed to delete conversations");
     }
   };
@@ -194,246 +199,222 @@ export default function ConversationList({
   const handleDeleteAll = async () => {
     if (conversations.length === 0) return;
     
-    if (!confirm(`Delete all ${conversations.length} conversation(s)?`)) return;
+    if (!confirm(`Delete all ${conversations.length} conversations?`)) return;
 
     try {
-      for (const conv of conversations) {
-        await api.patch(`${API_BASE_URL}/api/inbox/hide-inbox-conversation`, {
-          conversationId: conv.conversationId,
-          accountId: selectedAccount.id,
-        });
-      }
+      // ✅ BATCH DELETE ALL
+      const conversationIds = conversations.map(c => c.conversationId);
+      
+      await api.patch(`${API_BASE_URL}/api/inbox/batch-hide-conversations`, {
+        conversationIds,
+        accountId: selectedAccount.id,
+      });
 
       setConversations([]);
       setSelectedConversations([]);
       setSelectAll(false);
       setSelectionMode(false);
       setShowMoreMenu(false);
-      onUnreadChange?.(); 
+      
+      // ✅ Trigger unread count refresh
+      if (onUnreadChange) {
+        onUnreadChange();
+      }
     } catch (err) {
-      console.error("Failed to delete all:", err);
+      console.error("Delete all failed:", err);
       alert("Failed to delete all conversations");
     }
   };
 
+  // ✅ OPTIMIZED: Batch mark as read
   const handleMarkAsRead = async () => {
     if (selectedConversations.length === 0) return;
 
     try {
-      for (const conv of selectedConversations) {
-        await api.patch(`${API_BASE_URL}/api/inbox/conversations/${conv.conversationId}/read`);
-      }
+      const conversationIds = selectedConversations.map(c => c.conversationId);
+      
+      // ✅ Use batch endpoint
+      await api.patch(`${API_BASE_URL}/api/inbox/batch-mark-read`, {
+        conversationIds,
+        accountId: selectedAccount.id,
+      });
 
+      // Update local state
       setConversations((prev) =>
-        prev.map((c) =>
-          selectedConversations.some((sc) => sc.conversationId === c.conversationId)
-            ? { ...c, unreadCount: 0 }
-            : c
-        )
+        prev.map((conv) => {
+          if (selectedConversations.some((sc) => sc.conversationId === conv.conversationId)) {
+            return { ...conv, unreadCount: 0 };
+          }
+          return conv;
+        })
       );
+
       setSelectedConversations([]);
       setSelectAll(false);
       setSelectionMode(false);
       setShowMoreMenu(false);
-      onUnreadChange?.(); 
+      
+      // ✅ CRITICAL: Trigger unread count refresh in sidebar
+      if (onUnreadChange) {
+        onUnreadChange();
+      }
     } catch (err) {
-      console.error("Failed to mark as read:", err);
-      alert("Failed to mark as read");
+      console.error("Mark as read failed:", err);
+      alert("Failed to mark conversations as read");
     }
   };
 
+  // ✅ OPTIMIZED: Batch mark as unread
   const handleMarkAsUnread = async () => {
     if (selectedConversations.length === 0) return;
 
     try {
-      // Note: You'll need to create this endpoint in your backend
-      for (const conv of selectedConversations) {
-        await api.patch(`${API_BASE_URL}/api/inbox/conversations/${conv.conversationId}/unread`);
-      }
+      const conversationIds = selectedConversations.map(c => c.conversationId);
+      
+      // ✅ Use batch endpoint
+      await api.patch(`${API_BASE_URL}/api/inbox/batch-mark-unread`, {
+        conversationIds,
+        accountId: selectedAccount.id,
+      });
 
+      // Update local state
       setConversations((prev) =>
-        prev.map((c) =>
-          selectedConversations.some((sc) => sc.conversationId === c.conversationId)
-            ? { ...c, unreadCount: 1 }
-            : c
-        )
+        prev.map((conv) => {
+          if (selectedConversations.some((sc) => sc.conversationId === conv.conversationId)) {
+            return { ...conv, unreadCount: conv.messageCount || 1 };
+          }
+          return conv;
+        })
       );
+
       setSelectedConversations([]);
       setSelectAll(false);
       setSelectionMode(false);
       setShowMoreMenu(false);
-      onUnreadChange?.();
+      
+      // ✅ CRITICAL: Trigger unread count refresh in sidebar
+      if (onUnreadChange) {
+        onUnreadChange();
+      }
     } catch (err) {
-      console.error("Failed to mark as unread:", err);
-      alert("Failed to mark as unread");
+      console.error("Mark as unread failed:", err);
+      alert("Failed to mark conversations as unread");
     }
   };
 
-  const toggleSectionCollapse = (sectionName) => {
+  const handleConversationSelect = (conversation) => {
+    if (selectionMode) {
+      toggleSelectConversation(conversation);
+    } else {
+      onConversationSelect(conversation);
+    }
+  };
+
+  const toggleSectionCollapse = (group) => {
     setCollapsedSections((prev) => ({
       ...prev,
-      [sectionName]: !prev[sectionName],
+      [group]: !prev[group],
     }));
   };
 
-  // Date grouping functions
-  const getDateGroup = (date) => {
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr);
     const now = new Date();
-    const messageDate = new Date(date);
-    
-    // Reset time to midnight for accurate comparison
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const msgDay = new Date(messageDate.getFullYear(), messageDate.getMonth(), messageDate.getDate());
-    
-    const diffTime = today - msgDay;
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffDays === 0) return "Today";
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays === 1) return "Yesterday";
-    
-    // Get day name for this week
-    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    if (diffDays >= 2 && diffDays <= 6) {
-      return dayNames[messageDate.getDay()];
+    if (diffDays < 7) return `${diffDays}d ago`;
+
+    const options = { month: "short", day: "numeric" };
+    if (date.getFullYear() !== now.getFullYear()) {
+      options.year = "numeric";
     }
-    
-    if (diffDays >= 7 && diffDays <= 13) return "Last Week";
-    if (diffDays >= 14 && diffDays <= 27) return "Two Weeks Ago";
-    if (diffDays >= 28 && diffDays <= 60) return "Last Month";
-    
-    return "Older";
+    return date.toLocaleDateString(undefined, options);
   };
 
-  const groupConversationsByDate = () => {
+  const truncateText = (text, maxLength = 60) => {
+    if (!text) return "";
+    return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
+  };
+
+  const getAvatarLetter = (email) => {
+    return email ? email.charAt(0).toUpperCase() : "?";
+  };
+
+  const groupConversationsByDate = (conversations) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const thisWeekStart = new Date(today);
+    thisWeekStart.setDate(thisWeekStart.getDate() - today.getDay());
+    const lastWeekStart = new Date(thisWeekStart);
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+
     const groups = {
-      "Today": [],
-      "Yesterday": [],
-      "Monday": [],
-      "Tuesday": [],
-      "Wednesday": [],
-      "Thursday": [],
-      "Friday": [],
-      "Saturday": [],
-      "Sunday": [],
+      Today: [],
+      Yesterday: [],
+      "This Week": [],
       "Last Week": [],
-      "Two Weeks Ago": [],
-      "Last Month": [],
-      "Older": []
+      Earlier: [],
     };
 
     conversations.forEach((conv) => {
-      const group = getDateGroup(conv.lastDate);
-      if (groups[group]) {
-        groups[group].push(conv);
+      const convDate = new Date(conv.lastDate);
+      if (convDate >= today) {
+        groups.Today.push(conv);
+      } else if (convDate >= yesterday) {
+        groups.Yesterday.push(conv);
+      } else if (convDate >= thisWeekStart) {
+        groups["This Week"].push(conv);
+      } else if (convDate >= lastWeekStart) {
+        groups["Last Week"].push(conv);
+      } else {
+        groups.Earlier.push(conv);
       }
     });
 
-    // Return only non-empty groups in order
-    const order = [
-      "Today", "Yesterday", 
-      "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
-      "Last Week", "Two Weeks Ago", "Last Month", "Older"
-    ];
-    
-    return order
-      .filter(key => groups[key].length > 0)
-      .map(key => ({ group: key, conversations: groups[key] }));
+    return Object.entries(groups)
+      .filter(([_, convs]) => convs.length > 0)
+      .map(([group, conversations]) => ({ group, conversations }));
   };
 
-  const formatDate = (date) => {
-    const messageDate = new Date(date);
-    return messageDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  };
-
-  const truncateText = (html, maxLength = 80) => {
-    if (!html) return "";
-    let cleanHtml = html.replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, "");
-    const tmp = document.createElement("DIV");
-    tmp.innerHTML = cleanHtml;
-    let cleanText = tmp.textContent || tmp.innerText || "";
-    cleanText = cleanText.replace(/\s+/g, " ").trim();
-    return cleanText.length > maxLength ? cleanText.substring(0, maxLength) + "..." : cleanText;
-  };
-
-  const getAvatarLetter = (name) => {
-    if (!name) return "?";
-    const cleanName = name.replace(/^[^a-zA-Z0-9]+/, "");
-    return cleanName.charAt(0).toUpperCase() || "?";
-  };
-
-  const handleConversationSelect = async (conversation) => {
-    onConversationSelect(conversation);
-
-    try {
-      await api.patch(`${API_BASE_URL}/api/inbox/conversations/${conversation.conversationId}/read`);
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.conversationId === conversation.conversationId ? { ...c, unreadCount: 0 } : c
-        )
-      );
-    } catch (err) {
-      console.error("Failed to mark read:", err);
-    }
-  };
-
-  if (!selectedAccount?.id || !selectedFolder) {
-    return (
-      <div className="flex items-center justify-center h-full text-slate-500">
-        <p className="text-sm">Select an account and folder to view messages</p>
-      </div>
-    );
-  }
-
-  const groupedConversations = groupConversationsByDate();
+  const groupedConversations = groupConversationsByDate(conversations);
 
   return (
-    <div className="flex flex-col h-full bg-white/80 backdrop-blur-sm border-r border-emerald-200/50">
-      <div className="border-b border-emerald-200/50 px-4 py-3 flex items-center justify-between bg-gradient-to-r from-emerald-50/50 to-teal-50/50">
-        <div className="flex items-center gap-2">
-          {selectionMode && (
-            <input
-              type="checkbox"
-              checked={selectAll}
-              onChange={handleTopCheckboxChange}
-              className="accent-emerald-600 cursor-pointer w-4 h-4"
-              title="Select all conversations"
-            />
-          )}
-          <h3 className="text-sm font-bold text-emerald-700">
-            {conversations.length} Conversation{conversations.length !== 1 ? "s" : ""}
-          </h3>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleSort("sender")}
-            className={`text-xs px-3 py-1 rounded-lg font-medium transition-all ${
-              sortBy === "sender"
-                ? "bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 border border-emerald-200 shadow-sm"
-                : "text-slate-600 hover:bg-gradient-to-r hover:from-emerald-50 hover:to-teal-50"
-            } flex items-center gap-1`}
-          >
-            {selectedFolder === "sent" ? "Recipient" : "Sender"}
-            {sortBy === "sender" && (sortOrder === "desc" ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />)}
-          </button>
-          
-          {/* More Menu */}
+    <div className="flex flex-col h-full bg-white/90 backdrop-blur-sm">
+      {/* Header */}
+      <div className="p-2 border-b border-emerald-200/50 bg-gradient-to-r from-white to-emerald-50/30">
+        <div className="flex items-center justify-between ">
+          <h2 className="text-md font-bold bg-gradient-to-r from-emerald-600 to-green-800 bg-clip-text text-transparent">
+          {conversations.length} {conversations.length === 1 ? "conversation" : "conversations"}
+          </h2>
+
+          {/* More Menu - Top Right */}
           <div className="relative" ref={moreMenuRef}>
             <button
               onClick={() => setShowMoreMenu(!showMoreMenu)}
-              className="text-xs px-3 py-1 rounded-lg font-medium transition-all text-slate-600 hover:bg-gradient-to-r hover:from-emerald-50 hover:to-teal-50 flex items-center gap-1"
+              className="p-2 hover:bg-emerald-100 rounded-lg transition-colors"
+              title="More options"
             >
-              <MoreVertical className="w-4 h-4" />
+              <MoreVertical className="w-5 h-5 text-emerald-600" />
             </button>
-            
+
             {showMoreMenu && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-emerald-200 py-2 z-50">
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-emerald-200 z-50">
                 <button
                   onClick={handleSelectAll}
                   className="w-full px-4 py-2 text-left text-sm hover:bg-emerald-50 flex items-center gap-2 text-slate-700"
                 >
                   {selectionMode ? (
                     <>
-                      <X className="w-4 h-4 text-emerald-600" />
+                      <X className="w-4 h-4 text-red-600" />
                       Cancel Selection
                     </>
                   ) : (
@@ -472,7 +453,7 @@ export default function ConversationList({
                   className="w-full px-4 py-2 text-left text-sm hover:bg-emerald-50 flex items-center gap-2 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Mail className="w-4 h-4 text-emerald-600" />
-                  Mark as Read
+                  Mark as Read ({selectedConversations.length})
                 </button>
                 
                 <button
@@ -481,12 +462,30 @@ export default function ConversationList({
                   className="w-full px-4 py-2 text-left text-sm hover:bg-emerald-50 flex items-center gap-2 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Mail className="w-4 h-4 text-blue-600" />
-                  Mark as Unread
+                  Mark as Unread ({selectedConversations.length})
                 </button>
               </div>
             )}
           </div>
         </div>
+
+        {/* Sorting and Select All */}
+        <div className="flex items-center justify-between gap-2">
+          
+
+          {selectionMode && (
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectAll}
+                onChange={handleTopCheckboxChange}
+                className="accent-emerald-600"
+              />
+              <span className="font-medium">Select All</span>
+            </label>
+          )}
+        </div>
+         
       </div>
 
       <div className="flex-1 overflow-y-auto">

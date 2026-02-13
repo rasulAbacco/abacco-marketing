@@ -36,14 +36,14 @@ import {
   Minus,
   Quote,
   ArrowUpDown,
-  Pencil, // ✅ Added Pencil Icon
+  Pencil, 
+  FileEdit,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { api } from "../../utils/api"; 
 import { toast } from "react-hot-toast";
 import axios from 'axios';
 import AddLeadModal from "../../lead/AddLead.jsx";
-
 // import {
 //   replacePlaceholders,
 //   buildSignature,
@@ -1283,28 +1283,63 @@ const fetchTemplates = async () => {
   };
 
 
-const sendNormalReply = async (bodyHtml) => {
-  if (!activeReplyMessage) {
-    toast.error("No email selected to reply");
-    return;
-  }
+  const sendNormalReply = async (bodyHtml) => {
+    if (!activeReplyMessage) {
+      toast.error("No email selected to reply");
+      return;
+    }
 
-  try {
+    try {
+      const payload = new FormData();
+
+      payload.append("to", replyData.to);
+      payload.append("cc", replyData.cc || "");
+      payload.append("subject", replyData.subject);
+      payload.append("body", bodyHtml);
+      payload.append("emailAccountId", selectedFromAccount.id);
+      payload.append(
+        "conversationId",
+        selectedConversation.conversationId
+      );
+      payload.append(
+        "inReplyToId",
+        activeReplyMessage.messageId
+      );
+
+      await axios.post(
+        `${API_BASE_URL}/api/smtp/send`,
+        payload,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      toast.success("Reply sent successfully");
+      closeReplyModal();
+      onMessageSent?.();
+    } catch (err) {
+      console.error("Reply Error:", err);
+      toast.error(err.response?.data?.message || "Reply failed");
+    }
+  };
+
+  const sendReplyAll = async () => {
+    if (!activeReplyMessage) return;
+
+    const allRecipients = [
+      activeReplyMessage.fromEmail,
+      ...(activeReplyMessage.ccEmail?.split(",") || []),
+    ]
+      .map(e => e.trim())
+      .filter(Boolean)
+      .join(",");
+
     const payload = new FormData();
-
-    payload.append("to", replyData.to);
-    payload.append("cc", replyData.cc || "");
+    payload.append("to", allRecipients);
+    payload.append("cc", "");
     payload.append("subject", replyData.subject);
-    payload.append("body", bodyHtml);
+    payload.append("body", editorRef.current?.innerHTML || "");
     payload.append("emailAccountId", selectedFromAccount.id);
-    payload.append(
-      "conversationId",
-      selectedConversation.conversationId
-    );
-    payload.append(
-      "inReplyToId",
-      activeReplyMessage.messageId
-    );
+    payload.append("conversationId", selectedConversation.conversationId);
+    payload.append("inReplyToId", activeReplyMessage.messageId);
 
     await axios.post(
       `${API_BASE_URL}/api/smtp/send`,
@@ -1312,116 +1347,154 @@ const sendNormalReply = async (bodyHtml) => {
       { headers: { "Content-Type": "multipart/form-data" } }
     );
 
-    toast.success("Reply sent successfully");
+    toast.success("Reply all sent successfully");
     closeReplyModal();
-    onMessageSent?.();
-  } catch (err) {
-    console.error("Reply Error:", err);
-    toast.error(err.response?.data?.message || "Reply failed");
-  }
-};
+  };
 
-const sendReplyAll = async () => {
-  if (!activeReplyMessage) return;
+  const sendForwardMail = async () => {
+    const bodyHtml = editorRef.current?.innerHTML || "";
 
-  const allRecipients = [
-    activeReplyMessage.fromEmail,
-    ...(activeReplyMessage.ccEmail?.split(",") || []),
-  ]
-    .map(e => e.trim())
-    .filter(Boolean)
-    .join(",");
-
-  const payload = new FormData();
-  payload.append("to", allRecipients);
-  payload.append("cc", "");
-  payload.append("subject", replyData.subject);
-  payload.append("body", editorRef.current?.innerHTML || "");
-  payload.append("emailAccountId", selectedFromAccount.id);
-  payload.append("conversationId", selectedConversation.conversationId);
-  payload.append("inReplyToId", activeReplyMessage.messageId);
-
-  await axios.post(
-    `${API_BASE_URL}/api/smtp/send`,
-    payload,
-    { headers: { "Content-Type": "multipart/form-data" } }
-  );
-
-  toast.success("Reply all sent successfully");
-  closeReplyModal();
-};
-
-const sendForwardMail = async () => {
-  const bodyHtml = editorRef.current?.innerHTML || "";
-
-  if (!replyData.to.trim()) {
-    alert("Please enter recipient email");
-    return;
-  }
-
-  const payload = new FormData();
-  payload.append("to", replyData.to);
-  payload.append("cc", replyData.cc || "");
-  payload.append("subject", replyData.subject);
-  payload.append("body", bodyHtml);
-  payload.append("emailAccountId", selectedFromAccount.id);
-
-  await axios.post(
-    `${API_BASE_URL}/api/smtp/send`,
-    payload,
-    { headers: { "Content-Type": "multipart/form-data" } }
-  );
-
-  toast.success("Forward sent successfully");
-  closeReplyModal();
-};
-
-
-const sendForward = async () => {
-  const payload = new FormData();
-  payload.append("to", forwardTo);
-  payload.append("subject", `Fwd: ${selectedEmail.subject}`);
-  payload.append(
-    "body",
-    `<br/><br/>---------- Forwarded message ----------<br/>${selectedEmail.body}`
-  );
-  payload.append("emailAccountId", selectedAccount.id);
-
-  await axios.post("/api/smtp/send", payload);
-};
-
-
-const handleSendReply = async () => {
-  const bodyContent = editorRef.current?.innerHTML || "";
-
-  if (!bodyContent.trim()) {
-    alert("Please enter message content");
-    return;
-  }
-
-  if (!replyData.to.trim()) {
-    alert("Please enter a recipient email address");
-    return;
-  }
-
-  if (!selectedFromAccount) {
-    alert("Please select an email account to send from");
-    return;
-  }
-
-  setIsSending(true);
-  try {
-    if (replyMode === "reply") {
-      await sendNormalReply(bodyContent);
-    } else if (replyMode === "replyAll") {
-      await sendReplyAll();
-    } else if (replyMode === "forward") {
-      await sendForwardMail();
+    if (!replyData.to.trim()) {
+      alert("Please enter recipient email");
+      return;
     }
-  } finally {
-    setIsSending(false);
-  }
-};
+
+    const payload = new FormData();
+    payload.append("to", replyData.to);
+    payload.append("cc", replyData.cc || "");
+    payload.append("subject", replyData.subject);
+    payload.append("body", bodyHtml);
+    payload.append("emailAccountId", selectedFromAccount.id);
+
+    await axios.post(
+      `${API_BASE_URL}/api/smtp/send`,
+      payload,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    );
+
+    toast.success("Forward sent successfully");
+    closeReplyModal();
+  };
+
+
+  const sendForward = async () => {
+    const payload = new FormData();
+    payload.append("to", forwardTo);
+    payload.append("subject", `Fwd: ${selectedEmail.subject}`);
+    payload.append(
+      "body",
+      `<br/><br/>---------- Forwarded message ----------<br/>${selectedEmail.body}`
+    );
+    payload.append("emailAccountId", selectedAccount.id);
+
+    await axios.post("/api/smtp/send", payload);
+  };
+
+
+  const handleSendReply = async () => {
+    const bodyContent = editorRef.current?.innerHTML || "";
+
+    if (!bodyContent.trim()) {
+      alert("Please enter message content");
+      return;
+    }
+
+    if (!replyData.to.trim()) {
+      alert("Please enter a recipient email address");
+      return;
+    }
+
+    if (!selectedFromAccount) {
+      alert("Please select an email account to send from");
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      if (replyMode === "reply") {
+        await sendNormalReply(bodyContent);
+      } else if (replyMode === "replyAll") {
+        await sendReplyAll();
+      } else if (replyMode === "forward") {
+        await sendForwardMail();
+      }
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // ============================================================
+  // ✅ NEW: Save to Draft Handler (MOVE TO DRAFT, NOT CREATE NEW)
+  // ============================================================
+  const handleSaveToDraft = async () => {
+    try {
+      // Case 1: If user is composing/replying (replyMode is active)
+      // CREATE a new draft message
+      if (replyMode && editorRef.current) {
+        const draftBody = editorRef.current?.innerHTML || "";
+        
+        if (!replyData.to && !draftBody) {
+          toast.error("Cannot save empty draft");
+          return;
+        }
+
+        const draftData = {
+          to: replyData.to,
+          cc: replyData.cc,
+          subject: replyData.subject,
+          body: draftBody,
+          emailAccountId: selectedAccount.id,
+          conversationId: selectedConversation.conversationId,
+        };
+
+        console.log("💾 Creating new draft:", draftData);
+
+        const response = await api.post(
+          `${API_BASE_URL}/api/inbox/save-draft`,
+          draftData
+        );
+
+        if (response.data.success) {
+          toast.success("Draft saved successfully!");
+          setReplyMode(null);
+          setReplyData({
+            from: "",
+            to: "",
+            cc: "",
+            subject: "",
+            body: "",
+          });
+          
+          if (onMessageSent) {
+            onMessageSent();
+          }
+        }
+      } 
+      // Case 2: If viewing a message - MOVE entire conversation to draft folder
+      else if (selectedConversation?.conversationId) {
+        console.log("📁 Moving conversation to draft folder:", selectedConversation.conversationId);
+
+        const response = await api.patch(
+          `${API_BASE_URL}/api/inbox/move-to-draft`,
+          {
+            conversationId: selectedConversation.conversationId,
+            accountId: selectedAccount.id,
+          }
+        );
+
+        if (response.data.success) {
+          toast.success("Conversation moved to Drafts!");
+          onBack(); // Go back to conversation list
+        }
+      } else {
+        toast.error("No message to save as draft");
+        return;
+      }
+    } catch (error) {
+      console.error("❌ Error saving draft:", error);
+      toast.error("Failed to save draft: " + (error.response?.data?.message || error.message));
+    }
+  };
 
 
 
@@ -1551,38 +1624,48 @@ const handleSendReply = async () => {
             )}
 
             {/* 🗑️ TRASH ACTIONS */}
-            {selectedFolder === "trash" ? (
-              <>
-                {/* Restore */}
-                <button
-                  onClick={handleRestore}
-                  className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
-                  title="Restore to Inbox"
-                >
-                  <RotateCw className="w-4 h-4 text-emerald-600" />
-                </button>
+             
+           {selectedFolder === "trash" ? (
+  <>
+    {/* Restore */}
+    <button
+      onClick={handleRestore}
+      className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
+      title="Restore to Inbox"
+    >
+      <RotateCw className="w-4 h-4 text-emerald-600" />
+    </button>
 
-                {/* Permanent Delete */}
-                <button
-                  onClick={handlePermanentDelete}
-                  className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
-                  title="Delete Permanently"
-                >
-                  <Trash2 className="w-4 h-4 text-red-600" />
-                </button>
-              </>
-            ) : (
-              <>
-                {/* Move to Trash (Inbox / Spam) */}
-                <button
-                  onClick={handleTrashClick}
-                  className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
-                  title="Move to Trash"
-                >
-                  <Trash2 className="w-4 h-4 text-gray-600 group-hover:text-red-600" />
-                </button>
-              </>
-            )}
+    {/* Permanent Delete */}
+    <button
+      onClick={handlePermanentDelete}
+      className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
+      title="Delete Permanently"
+    >
+      <Trash2 className="w-4 h-4 text-red-600" />
+    </button>
+  </>
+) : (
+  <>
+    {/* ✅ UPDATED: Save to Draft - ALWAYS VISIBLE */}
+    <button
+      onClick={handleSaveToDraft}
+      className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
+      title="Save to Drafts"
+    >
+      <FileEdit className="w-4 h-4 text-gray-600 group-hover:text-blue-600" />
+    </button>
+
+    {/* Move to Trash */}
+    <button
+      onClick={handleTrashClick}
+      className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
+      title="Move to Trash"
+    >
+      <Trash2 className="w-4 h-4 text-gray-600 group-hover:text-red-600" />
+    </button>
+  </>
+)}
 
             {/* ➕ Add Lead */}
             <button
@@ -1631,17 +1714,19 @@ const handleSendReply = async () => {
         ) : (
           <div className="max-w-4xl mx-auto py-6 px-6 space-y-4">
             {messages
-              .filter((msg) => {
-                // If we are in Sent folder, show only sent items
-                if (selectedFolder === "sent") return true;
+                .filter((msg) => {
+                  // If we are in Sent folder, show only sent items
+                  if (selectedFolder === "sent") return true;
 
-                // If we are in Trash or Spam, show everything in that conversation
-                if (["spam", "trash"].includes(selectedFolder)) return true;
+                  // If we are in Draft folder, show drafts
+                  if (selectedFolder === "draft") return msg.folder === "draft";
 
-                // 📥 FIX FOR INBOX: Show both SENT and RECEIVED messages
-                // This ensures your replies show up in the conversation history
-                return msg.direction === "received" || msg.direction === "sent";
-              })
+                  // If we are in Trash or Spam, show everything in that conversation
+                  if (["spam", "trash"].includes(selectedFolder)) return true;
+
+                  // 📥 FIX FOR INBOX: Show both SENT and RECEIVED messages
+                  return msg.direction === "received" || msg.direction === "sent";
+                })
               .reverse()
               // ... render message
               .map((message) => {
