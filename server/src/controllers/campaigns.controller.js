@@ -303,11 +303,9 @@ export const sendCampaignNow = async (req, res) => {
 
     await prisma.campaign.update({
       where: { id: campaignId },
-      data: {
-        status: "sent",
-        sentAt: new Date()
-      }
+      data: { status: "sending" }
     });
+
 
     const locked = new Set();
 
@@ -978,3 +976,107 @@ export const getCampaignsForFollowup = async (req, res) => {
     });
   }
 };
+
+
+/**
+ * Get Single Campaign Details (For View Modal)
+ */
+export const getSingleCampaign = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id },
+      include: {
+        recipients: true
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: "Campaign not found"
+      });
+    }
+
+    const total = campaign.recipients.length;
+    const processing = campaign.recipients.filter(r => r.status === "pending").length;
+    const completed = campaign.recipients.filter(r => r.status === "sent").length;
+    const failed = campaign.recipients.filter(r => r.status === "failed").length;
+
+    return res.json({
+      success: true,
+      data: {
+        campaign,
+        stats: {
+          total,
+          processing,
+          completed,
+          failed
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("Get single campaign error:", err);
+    res.status(500).json({ success: false });
+  }
+};
+
+export const stopCampaign = async (req, res) => {
+  try {
+    const campaignId = Number(req.params.id);
+
+    if (!campaignId) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid campaign id"
+      });
+    }
+
+    // 🔍 Find campaign and ensure it belongs to user
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id: campaignId,
+        userId: req.user.id
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: "Campaign not found"
+      });
+    }
+
+    // ❌ Already stopped / completed / draft
+    if (campaign.status !== "sending") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot stop campaign with status: ${campaign.status}`
+      });
+    }
+
+    // 🛑 Update status to stopped
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: { status: "stopped" }
+    });
+
+    // 🔥 Clear dashboard cache
+    invalidateDashboardCache(req.user.id);
+
+    return res.json({
+      success: true,
+      message: "Campaign stopped successfully"
+    });
+
+  } catch (err) {
+    console.error("Stop campaign error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to stop campaign"
+    });
+  }
+};
+

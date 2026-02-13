@@ -46,7 +46,6 @@ export default function CampaignDetail() {
   const [campaigns, setCampaigns] = useState([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [loadedCampaign, setLoadedCampaign] = useState(null);
-
   const [subjects, setSubjects] = useState([]);
   const [followUpBody, setFollowUpBody] = useState("");
   const [originalBody, setOriginalBody] = useState("");
@@ -268,6 +267,9 @@ const createFollowUp = async () => {
       type: "success",
       message: "Follow-up campaign started successfully. Emails are now sending.",
     });
+    setTimeout(() => {
+      window.location.href = "/campaigns";
+    }, 2000);
   } catch (err) {
     setModal({
       open: true,

@@ -31,12 +31,13 @@ function buildFollowupHtml({
   from,
   to,
   sentAt,
-  subject
+  subject,
+  baseColor
 }) {
   return `
-    <div>
-      
-      <!-- Follow-up message (top) -->
+    <div style="color:${baseColor}; font-family: Calibri, sans-serif;">
+
+      <!-- Follow-up message -->
       <div>
         ${followUpBody}
       </div>
@@ -44,8 +45,12 @@ function buildFollowupHtml({
       <br />
       <hr style="border:none;border-top:1px solid #ccc;margin:16px 0;" />
 
-      <!-- Thread header (From, Sent, To, Subject) -->
-      <div style="font-size:13px; line-height:1.5; font-family: Calibri, sans-serif;">
+      <!-- Thread header -->
+      <div style="
+        font-size:13px;
+        line-height:1.5;
+        color:${baseColor};
+      ">
         <b>From:</b> ${from}<br/>
         <b>Sent:</b> ${sentAt}<br/>
         <b>To:</b> ${to}<br/>
@@ -57,10 +62,11 @@ function buildFollowupHtml({
       <!-- Previous message -->
       <blockquote style="
         margin:0;
-        padding-left:12px;
+        padding-left:5px;
         border-left:2px solid #ccc;
+        color:${baseColor};
       ">
-        ${originalBody}
+        ${originalBody}y
       </blockquote>
 
     </div>
@@ -318,6 +324,17 @@ export async function sendBulkCampaign(campaignId) {
       let accountStartTime = Date.now();
 
       for (let i = 0; i < group.length; i++) {
+            // stop cmapign
+            const latestCampaign = await prisma.campaign.findUnique({
+              where: { id: campaignId },
+              select: { status: true }
+            });
+
+            if (latestCampaign.status !== "sending") {
+              console.log("⏹ Campaign manually stopped:", campaignId);
+              return;
+            }
+
         const r = group[i];
 
         try {
@@ -518,6 +535,16 @@ export async function sendBulkCampaign(campaignId) {
         let accountStartTime = Date.now();
 
         for (let i = 0; i < list.length; i++) {
+           // stop Campaign
+          const latestCampaign = await prisma.campaign.findUnique({
+            where: { id: campaignId },
+            select: { status: true }
+          });
+
+          if (latestCampaign.status !== "sending") {
+            console.log("⏹ Campaign manually stopped:", campaignId);
+            return;
+          }
 
           const { recipient, rawSubject, body: rawBody } = list[i];
 
@@ -585,7 +612,7 @@ export async function sendBulkCampaign(campaignId) {
                 style="border-collapse:collapse; background-color:#ffffff;">
 
                 <tr>
-                  <td style="padding:20px; background-color:#ffffff;">
+                  <td style="padding-top:15px; background-color:#ffffff;">
 
                     <div style="
                       font-family:${baseStyles.fontFamily};

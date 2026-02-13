@@ -23,10 +23,24 @@ export default function ModernSidebar({
   onAddAccount,
   isCollapsed: externalCollapsed,
   onToggleCollapse,
+  unreadRefreshKey ,
+  refreshKey 
 }) {
   const [isCollapsed, setIsCollapsed] = useState(externalCollapsed || false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedAccounts, setExpandedAccounts] = useState({});
+  const [unreadCount, setUnreadCount] = useState(0);
+
+
+  const fetchSidebarCounts = async () => {
+  try {
+    const res = await api.get("/inbox/sidebar-counts"); // use your real API route
+    setCounts(res.data);
+  } catch (error) {
+    console.error("Failed to fetch sidebar counts", error);
+  }
+};
+
 
   useEffect(() => {
     if (externalCollapsed !== undefined) {
@@ -59,6 +73,31 @@ export default function ModernSidebar({
   const filteredAccounts = accounts.filter((acc) =>
     acc.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const fetchUnreadCount = async () => {
+    if (!selectedAccount?.id) return;
+
+    try {
+      const res = await axios.get(
+        `/api/inbox/accounts/${selectedAccount.id}/unread`
+      );
+
+      if (res.data.success) {
+        setUnreadCount(res.data.data.inboxUnread);
+      }
+    } catch (err) {
+      console.error("Unread fetch error:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUnreadCount();
+  }, [selectedAccount, unreadRefreshKey]);
+
+  useEffect(() => {
+    fetchSidebarCounts();   // your API call for unread counts
+  }, [refreshKey]);
+
 
   return (
     <div

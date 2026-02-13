@@ -6,7 +6,6 @@ import {
   Users,
   Mail,
   Megaphone,
-  LineChart,
   Shield,
   FileText,
   X,

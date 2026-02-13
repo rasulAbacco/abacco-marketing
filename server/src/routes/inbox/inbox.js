@@ -217,6 +217,48 @@ router.patch( "/conversations/:conversationId/read", protect, async (req, res) =
   }
 );
 
+/* =========================================================
+   MARK CONVERSATION AS UNREAD
+   PATCH /api/inbox/conversations/:conversationId/unread
+========================================================= */
+router.patch( "/conversations/:conversationId/unread", protect, async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+
+      await prisma.emailMessage.updateMany({
+        where: { conversationId },
+        data: { isRead: false },
+      });
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Mark unread error:", err);
+      res.status(500).json({ success: false });
+    }
+  }
+);
+
+/* =========================================================
+   MARK CONVERSATION AS UNREAD
+   PATCH /api/inbox/conversations/:conversationId/unread
+========================================================= */
+router.patch( "/conversations/:conversationId/unread", protect, async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+
+      await prisma.emailMessage.updateMany({
+        where: { conversationId },
+        data: { isRead: false },
+      });
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Mark unread error:", err);
+      res.status(500).json({ success: false });
+    }
+  }
+);
+
 
 /* =========================================================
    SEARCH

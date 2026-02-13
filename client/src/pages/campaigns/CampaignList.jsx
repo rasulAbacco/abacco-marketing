@@ -20,10 +20,13 @@ import {
   Search,
   Zap,
   Target,
-  Award
+  Award,
+  StopCircle
 } from "lucide-react";
 import CreateCampaign from "./campaignPages/CreateCampaign";
 import CampaignDetail from "./campaignPages/CampaignDetail";
+import CampaignView from "./campaignPages/Schedulemodal";
+
 import { api } from "../utils/api";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -96,6 +99,7 @@ export default function CampaignList() {
         {activeTab === "campaign" && <CreateCampaign />}
         {activeTab === "followup" && <CampaignDetail />}
       </div>
+      
     </div>
   );
 }
@@ -360,6 +364,7 @@ const TabButton = ({ active, onClick, icon, label }) => (
 
 const getCampaignLabel = (campaign) => {
   if (campaign.status === "sending") return "Sending";
+  if (campaign.status === "stopped") return "Stopped";
   if (campaign.status === "completed" || campaign.status === "completed_with_errors") return "Completed";
   if (campaign.status === "scheduled") return "Scheduled";
   if (campaign.sendType === "immediate") return "Immediate";
@@ -377,6 +382,7 @@ const DashboardTab = () => {
   const [search, setSearch] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [selectedCampaignId, setSelectedCampaignId] = useState(null);
 
   useEffect(() => {
     fetchCampaigns();
@@ -443,6 +449,30 @@ const DashboardTab = () => {
       setDeleting(null);
     }
   };
+
+const stopCampaign = async (id) => {
+  try {
+    const confirmStop = window.confirm(
+      "Are you sure you want to stop this campaign?"
+    );
+    if (!confirmStop) return;
+
+    const res = await api.post(`${API_BASE_URL}/api/campaigns/${id}/stop`);
+
+    if (res.data.success) {
+      alert("Campaign stopped successfully!");
+      fetchCampaigns();
+    } else {
+      alert(res.data.message || "Failed to stop campaign");
+    }
+
+  } catch (error) {
+    console.error("Stop campaign error:", error);
+    alert(error.response?.data?.message || "Network or server error");
+  }
+};
+
+
 
   const manualRefresh = async () => {
     await fetchCampaigns();
@@ -612,7 +642,7 @@ const DashboardTab = () => {
       </div>
 
       {/* Enhanced Campaigns Table */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-emerald-200/50 shadow-lg overflow-hidden">
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-emerald-200/50 shadow-lg overflow-hidden min-h-[600px]">
         {campaigns.length === 0 ? (
           <div className="text-center py-24">
             <div className="relative inline-block mb-6">
@@ -623,29 +653,30 @@ const DashboardTab = () => {
             <p className="text-slate-600 text-sm">Create your first campaign to get started</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gradient-to-r from-emerald-50 via-teal-50 to-green-50 border-b border-emerald-200">
-                  <th className="px-6 py-4 text-left">
-                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Campaign</span>
-                  </th>
-                  <th className="px-6 py-4 text-left">
-                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Type</span>
-                  </th>
-                  <th className="px-6 py-4 text-left">
-                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Recipients</span>
-                  </th>
-                  <th className="px-6 py-4 text-left">
-                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Date</span>
-                  </th>
-                  <th className="px-6 py-4 text-center">
-                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-emerald-100">
-                {campaigns
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-emerald-200/50 shadow-lg overflow-hidden">
+            <div className="overflow-auto min-h-[600px] max-h-[650px]">
+              <table className="w-full">
+                <thead className="sticky top-0 bg-gradient-to-r from-emerald-50 via-teal-50 to-green-50 z-10">
+                  <tr className="border-b border-emerald-200">
+                    <th className="px-6 py-4 text-left">
+                      <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Campaign</span>
+                    </th>
+                    <th className="px-6 py-4 text-left">
+                      <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Type</span>
+                    </th>
+                    <th className="px-6 py-4 text-left">
+                      <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Recipients</span>
+                    </th>
+                    <th className="px-6 py-4 text-left">
+                      <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Date</span>
+                    </th>
+                    <th className="px-6 py-4 text-center">
+                      <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-100 bg-white">
+                  {campaigns
                   .filter(campaign =>
                     campaign.name?.toLowerCase().includes(search.toLowerCase())
                   )
@@ -699,6 +730,12 @@ const DashboardTab = () => {
                       text: "text-blue-700",
                       border: "border-blue-200",
                       icon: <Activity size={14} className="animate-pulse" />
+                    },
+                    stopped: {
+                      bg: "bg-gradient-to-br from-red-50 to-orange-50",
+                      text: "text-red-700",
+                      border: "border-red-200",
+                      icon: <StopCircle size={14} />
                     },
                     scheduled: {
                       bg: "bg-gradient-to-br from-indigo-50 to-purple-50",
@@ -758,6 +795,8 @@ const DashboardTab = () => {
                                   ? "bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-700 border-indigo-200"
                                   : getCampaignLabel(campaign) === "Sending"
                                   ? "bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-700 border-blue-200"
+                                  : getCampaignLabel(campaign) === "Stopped"
+                                  ? "bg-gradient-to-br from-red-50 to-orange-50 text-red-700 border-red-200"
                                   : "bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-700 border-emerald-200"
                               }
                             `}
@@ -766,17 +805,35 @@ const DashboardTab = () => {
                           </span>
                         </td>
 
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1 bg-emerald-100 rounded-lg">
-                              <Users size={16} className="text-slate-600" />
+                        <td className="px-6 py-1">
+                          <div className="flex items-center">
+                            
+                            {/* Left Side - Icon + Count */}
+                            <div className="flex items-center gap-2">
+                              <div className="p-1 bg-emerald-100 rounded-lg">
+                                <Users size={16} className="text-slate-600" />
+                              </div>
+
+                              <span className="text-sm font-bold text-slate-900">
+                                {(campaign.recipients?.length || 0).toLocaleString()}
+                              </span>
+
+                              <span className="text-xs text-slate-600 font-medium">
+                                recipients
+                              </span>
                             </div>
-                            <span className="text-sm font-bold text-slate-900">
-                              {(campaign.recipients?.length || 0).toLocaleString()}
-                            </span>
-                            <span className="text-xs text-slate-600 font-medium">recipients</span>
+
+                            {/* Right Side - View Button */}
+                            <button
+                              onClick={() => setSelectedCampaignId(campaign.id)}
+                              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline ml-3"
+                            >
+                              View
+                            </button>
+
                           </div>
                         </td>
+
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <Calendar size={16} className="text-slate-600" />
@@ -785,7 +842,10 @@ const DashboardTab = () => {
                         </td>
                         <td className="px-6 py-4 text-center">
                           <div className="flex gap-2 justify-center">
-                            {(campaign.status === "sending" || campaign.status === "completed" || campaign.status === "completed_with_errors") && (
+
+                            {(campaign.status === "sending" ||
+                              campaign.status === "completed" ||
+                              campaign.status === "completed_with_errors") && (
                               <button
                                 onClick={() => toggleRow(campaign.id)}
                                 className="inline-flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-emerald-100 to-teal-100 hover:from-emerald-200 hover:to-teal-200 text-emerald-700 rounded-xl transition-all text-xs font-bold border border-emerald-200 shadow-sm transform hover:scale-105"
@@ -803,6 +863,7 @@ const DashboardTab = () => {
                                 )}
                               </button>
                             )}
+
                             <button
                               onClick={() => handleDelete(campaign.id)}
                               disabled={deleting === campaign.id}
@@ -817,8 +878,20 @@ const DashboardTab = () => {
                                 "Delete"
                               )}
                             </button>
+
+                            {/* 🔥 STOP BUTTON */}
+                            {campaign.status === "sending" && (
+                              <button
+                                onClick={() => stopCampaign(campaign.id)}
+                                className="px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl text-xs hover:shadow-lg shadow-orange-500/30 transition-all flex items-center gap-1 font-bold transform hover:scale-105"
+                              >
+                                Stop
+                              </button>
+                            )}
+
                           </div>
                         </td>
+
                       </tr>
                       {isExpanded && (campaign.status === "sending" || campaign.status === "completed" || campaign.status === "completed_with_errors") && (
                         <tr>
@@ -837,8 +910,17 @@ const DashboardTab = () => {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
+
         )}
+        {selectedCampaignId && (
+          <CampaignView
+            campaignId={selectedCampaignId}
+            onClose={() => setSelectedCampaignId(null)}
+          />
+        )}
+
       </div>
     </div>
   );

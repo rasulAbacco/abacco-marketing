@@ -329,7 +329,7 @@ export default function CreateCampaign() {
       }
 
       alert(campaignType === "immediate" ? "Campaign sent successfully! It will continue sending automatically." : "Campaign scheduled successfully!");
-
+      window.location.href = "/campaigns";
       setSubject("");
       setManualEmails("");
       setParsedEmails([]);

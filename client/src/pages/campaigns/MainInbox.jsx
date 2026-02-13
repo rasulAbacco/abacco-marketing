@@ -34,6 +34,10 @@ export default function InboxMain() {
     setRefreshKey(prev => prev + 1);
   };
 
+  const handleRefreshAll = () => {
+    setRefreshKey(prev => prev + 1);
+  };
+
   // ✅ CALCULATE DEFAULT DATE (3 MONTHS AGO)
   const getDefaultDateFrom = () => {
     const d = new Date();
@@ -415,6 +419,7 @@ export default function InboxMain() {
         onAddAccount={handleAddAccount}
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={setSidebarCollapsed}
+        unreadRefreshKey={refreshKey}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden relative z-10">
@@ -475,6 +480,7 @@ export default function InboxMain() {
               selectedConversations={selectedConversations}
               setSelectedConversations={setSelectedConversations}
               refreshKey={refreshKey}
+              onUnreadChange={() => setRefreshKey(prev => prev + 1)}
             />
           </div>
 
