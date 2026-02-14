@@ -40,18 +40,18 @@ const FONT_FAMILIES = [
 ];
 
 const FONT_SIZES = [
-  { value: "10px", label: "10" },
-  { value: "11px", label: "11" },
-  { value: "12px", label: "12" },
-  { value: "13px", label: "13" },
-  { value: "14px", label: "14" },
-  { value: "15px", label: "15" },
-  { value: "16px", label: "16" },
-  { value: "18px", label: "18" },
-  { value: "20px", label: "20" },
-  { value: "24px", label: "24" },
-  { value: "28px", label: "28" },
-  { value: "32px", label: "32" },
+  { value: "13px", label: "10" },
+  { value: "14px", label: "11" },
+  { value: "15px", label: "12" },
+  { value: "16px", label: "13" },
+  { value: "18px", label: "14" },
+  { value: "20px", label: "15" },
+  { value: "24px", label: "16" },
+  { value: "26px", label: "18" },
+  { value: "28px", label: "20" },
+  { value: "30px", label: "24" },
+  { value: "32px", label: "28" },
+  { value: "34px", label: "32" },
   { value: "36px", label: "36" },
 ];
 
@@ -116,6 +116,11 @@ export default function CreateCampaign() {
 
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const [senderRole, setSenderRole] = useState("");
+  const [editingRole, setEditingRole] = useState(false);
+  const [tempRole, setTempRole] = useState("");
+
 
   const formatText = (command, value = null) => {
     document.execCommand(command, false, value);
@@ -279,6 +284,21 @@ export default function CreateCampaign() {
     fetchCampaigns();
   }, []);
 
+  useEffect(() => {
+    const savedRole = localStorage.getItem("senderRole");
+    if (savedRole) {
+      setSenderRole(savedRole);
+    }
+  }, []);
+
+  const handleSaveRole = () => {
+    setSenderRole(tempRole);
+    localStorage.setItem("senderRole", tempRole);
+    setEditingRole(false);
+  };
+
+ 
+
   const handleSend = async () => {
     try {
       setErrorMsg("");
@@ -321,7 +341,8 @@ export default function CreateCampaign() {
           pitchIds: selectedPitchIds,
           sendType: campaignType,
           scheduledAt: campaignType === "scheduled" ? `${scheduleDate}T${scheduleTime}` : null,
-          customLimits: customLimits
+          customLimits: customLimits,
+          senderRole, 
         }),
       });
 
@@ -882,16 +903,43 @@ export default function CreateCampaign() {
             )}
 
             <div className="border-t border-emerald-200 p-4 flex justify-between items-center bg-gradient-to-r from-emerald-50/50 to-teal-50/50">
-              <div>
-                <input ref={fileInputRef} type="file" multiple onChange={handleAttachmentUpload} className="hidden" />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-emerald-600 hover:bg-emerald-100 rounded-lg transition font-semibold border border-emerald-200"
-                >
-                  <Paperclip size={16} />
-                  Attach files
-                </button>
+              <div className="flex items-center gap-3">
+                {!editingRole ? (
+                  <>
+                    <p className="text-sm font-semibold text-gray-700">
+                      Sender: <span className="text-emerald-600">{senderRole || "Not Set"}</span>
+                    </p>
+
+                    <button
+                      onClick={() => {
+                        setTempRole(senderRole);
+                        setEditingRole(true);
+                      }}
+                      className="text-xs text-blue-600 underline"
+                    >
+                      Edit
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={tempRole}
+                      onChange={(e) => setTempRole(e.target.value)}
+                      placeholder="Enter Job Title (e.g. VP Analyst)"
+                      className="border rounded px-2 py-1 text-sm"
+                    />
+
+                    <button
+                      onClick={handleSaveRole}
+                      className="bg-emerald-600 text-white px-3 py-1 rounded text-sm"
+                    >
+                      Save
+                    </button>
+                  </>
+                )}
               </div>
+
 
               {selectedPitchIds.length > 0 && (
                 <button

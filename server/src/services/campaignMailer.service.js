@@ -73,11 +73,14 @@ function buildFollowupHtml({
   `;
 }
 
-function buildSignature(account, baseStyles = {}) {
+function buildSignature(account, senderRole, baseStyles = {}) {
   const name =
     account.senderName ||
     account.email?.split("@")[0] ||
     "Sender";
+
+  // ✅ Default fallback role
+  const role = senderRole?.trim() || "Marketing Analyst";
 
   const safeStyles = {
     fontFamily: baseStyles.fontFamily || "Calibri, sans-serif",
@@ -95,10 +98,11 @@ function buildSignature(account, baseStyles = {}) {
       font-weight:bold;
     ">
       Regards,<br/>
-      ${name} - Marketing Analyst
+      ${name} - ${role}
     </div>
   `;
 }
+
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -368,7 +372,7 @@ export async function sendBulkCampaign(campaignId) {
               baseStyles.color = "#000000";
             }
 
-            const signature = buildSignature(account, baseStyles);
+            const signature = buildSignature(account, campaign.senderRole, baseStyles);
             const followupWithSignature = followupBody + signature;
 
             let originalBodyHtml = r.sentBodyHtml || "";
@@ -579,7 +583,7 @@ export async function sendBulkCampaign(campaignId) {
               baseStyles.color = "#000000";
             }
 
-            const signature = buildSignature(account, baseStyles);
+            const signature = buildSignature(account, campaign.senderRole, baseStyles);
 
             // Don't force black color - preserve the user's color choice
             if (!body.includes("color:") && baseStyles.color !== "#000000") {

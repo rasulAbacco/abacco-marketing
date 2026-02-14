@@ -38,7 +38,8 @@ export const createCampaign = async (req, res) => {
       pitchIds,
       sendType,
       scheduledAt,
-      customLimits
+      customLimits,
+      senderRole 
     } = req.body;
 
     // 1️⃣ Basic validation
@@ -207,6 +208,7 @@ export const createCampaign = async (req, res) => {
         bodyHtml,
         sendType,
         estimatedCompletion,
+        senderRole, // ✅ Save role
 
         // ✅ scheduledAt ONLY for scheduled campaigns
         scheduledAt:
@@ -470,6 +472,9 @@ export const createFollowupCampaign = async (req, res) => {
       finalName = `${finalName} (${i})`;
     }
 
+    // ✅ Copy senderRole from parent campaign for follow-ups
+    const parentSenderRole = baseCampaign.senderRole || "";
+
     const followupCampaign = await prisma.campaign.create({
       data: {
         userId: req.user.id,
@@ -480,7 +485,8 @@ export const createFollowupCampaign = async (req, res) => {
         status: "draft",
         parentCampaignId: baseCampaignId,
         fromAccountIds: JSON.stringify([]),
-        pitchIds: JSON.stringify([])
+        pitchIds: JSON.stringify([]),
+        senderRole: parentSenderRole // ✅ Inherit sender role from parent campaign
       }
     });
 

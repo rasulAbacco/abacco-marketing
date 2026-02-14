@@ -39,18 +39,18 @@ const FONT_FAMILIES = [
 ];
 
 const FONT_SIZES = [
-  { value: "10px", label: "10" },
-  { value: "11px", label: "11" },
-  { value: "12px", label: "12" },
-  { value: "13px", label: "13" },
-  { value: "14px", label: "14" },
-  { value: "15px", label: "15" },
-  { value: "16px", label: "16" },
-  { value: "18px", label: "18" },
-  { value: "20px", label: "20" },
-  { value: "24px", label: "24" },
-  { value: "28px", label: "28" },
-  { value: "32px", label: "32" },
+  { value: "13px", label: "10" },
+  { value: "14px", label: "11" },
+  { value: "15px", label: "12" },
+  { value: "16px", label: "13" },
+  { value: "18px", label: "14" },
+  { value: "20px", label: "15" },
+  { value: "24px", label: "16" },
+  { value: "26px", label: "18" },
+  { value: "28px", label: "20" },
+  { value: "30px", label: "24" },
+  { value: "32px", label: "28" },
+  { value: "34px", label: "32" },
   { value: "36px", label: "36" },
 ];
 

@@ -262,6 +262,7 @@ model Campaign {
   pitchIds         String?
   bodyHtml         String
   originalBodyHtml String?
+  senderRole       String?
 
   // 🔹 STATUS & TYPE
   status String @default("draft")
