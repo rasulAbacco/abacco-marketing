@@ -371,7 +371,7 @@ export default function CampaignDetail() {
       <div className="relative z-10 container mx-auto px-6 py-12">
         {/* Header */}
         <div className="text-center mb-12 space-y-3">
-          <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600">
+          <h1 className="text-5xl py-2 font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600">
            Follow-up Campaign
           </h1>
           <p className="text-emerald-700/80 text-lg font-medium max-w-2xl mx-auto">
@@ -663,7 +663,7 @@ export default function CampaignDetail() {
 
 
     
-    </div>
+      </div>
     </div>
   );
 }

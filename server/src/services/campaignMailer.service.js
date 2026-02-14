@@ -66,7 +66,7 @@ function buildFollowupHtml({
         border-left:2px solid #ccc;
         color:${baseColor};
       ">
-        ${originalBody}y
+        ${originalBody}
       </blockquote>
 
     </div>
