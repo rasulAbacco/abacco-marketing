@@ -521,15 +521,15 @@ export const createFollowupCampaign = async (req, res) => {
     });
 
     // 🔥 ADD THIS: Update status to sending and trigger the send
-    await prisma.campaign.update({
-      where: { id: followupCampaign.id },
-      data: { status: "sending" }
-    });
+    // await prisma.campaign.update({
+    //   where: { id: followupCampaign.id },
+    //   data: { status: "sending" }
+    // });
 
     // 🔥 ADD THIS: Trigger the sending process
-    sendBulkCampaign(followupCampaign.id).catch(err => {
-      console.error(`Error in followup campaign ${followupCampaign.id}:`, err);
-    });
+    // sendBulkCampaign(followupCampaign.id).catch(err => {
+    //   console.error(`Error in followup campaign ${followupCampaign.id}:`, err);
+    // });
 
     // 🔥 INVALIDATE CACHE
     invalidateDashboardCache(req.user.id);
@@ -1080,3 +1080,92 @@ export const stopCampaign = async (req, res) => {
   }
 };
 
+
+export const updateFollowupRecipients = async (req, res) => {
+  try {
+    const { campaignId, recipients } = req.body;
+
+    console.log("Update recipients request:", { campaignId, recipientsCount: recipients?.length });
+
+    // Validation
+    if (!campaignId || !Array.isArray(recipients)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payload: campaignId and recipients array required"
+      });
+    }
+
+    if (recipients.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot save empty recipient list"
+      });
+    }
+
+    // Verify campaign exists and belongs to user
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id: Number(campaignId),
+        userId: req.user.id
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: "Campaign not found or access denied"
+      });
+    }
+
+    // Delete existing recipients
+    await prisma.campaignRecipient.deleteMany({
+      where: { campaignId: Number(campaignId) }
+    });
+
+    // Re-create only remaining recipients
+    await prisma.campaignRecipient.createMany({
+      data: recipients.map(r => ({
+        campaignId: Number(campaignId),
+        email: r.email,
+        status: r.status || "pending",
+        accountId: r.accountId ? Number(r.accountId) : null,
+        sentBodyHtml: r.sentBodyHtml || "",
+        sentSubject: r.sentSubject || "",
+        sentFromEmail: r.sentFromEmail || ""
+      }))
+    });
+
+    console.log(`✅ Updated recipients for campaign ${campaignId}: ${recipients.length} recipients saved`);
+
+    return res.json({ 
+      success: true,
+      message: `Successfully updated ${recipients.length} recipients`
+    });
+
+  } catch (err) {
+    console.error("Update followup recipients error:", err);
+    return res.status(500).json({ 
+      success: false,
+      message: err.message || "Failed to update recipients"
+    });
+  }
+};
+
+
+export const sendFollowupCampaign = async (req, res) => {
+  try {
+    const campaignId = Number(req.params.id);
+
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: { status: "sending" }
+    });
+
+    sendBulkCampaign(campaignId);
+
+    return res.json({ success: true });
+
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+};

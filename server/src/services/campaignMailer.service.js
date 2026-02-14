@@ -284,179 +284,181 @@ export async function sendBulkCampaign(campaignId) {
       grouped[r.accountId].push(r);
     }
 
-    for (const [accountId, group] of Object.entries(grouped)) {
+    await Promise.all(
+      Object.entries(grouped).map(async ([accountId, group]) => {
 
-      const account = await prisma.emailAccount.findUnique({
-        where: { id: Number(accountId) }
-      });
-      if (!account) continue;
+        const account = await prisma.emailAccount.findUnique({
+          where: { id: Number(accountId) }
+        });
+        if (!account) return;
 
-      const limit = getLimit(account.provider, account.id, customLimits);
-      const delayPerEmail = (60 * 60 * 1000) / limit;
+        const limit = getLimit(account.provider, account.id, customLimits);
+        const delayPerEmail = (60 * 60 * 1000) / limit;
 
-      let smtpPassword = account.encryptedPass;
-      if (typeof smtpPassword === "string" && smtpPassword.includes(":")) {
-        smtpPassword = decrypt(smtpPassword);
-      }
+        let smtpPassword = account.encryptedPass;
+        if (typeof smtpPassword === "string" && smtpPassword.includes(":")) {
+          smtpPassword = decrypt(smtpPassword);
+        }
 
-      const domain = (account.email.split("@")[1] || "localhost").toLowerCase();
+        const domain = (account.email.split("@")[1] || "localhost").toLowerCase();
 
-      const transporter = nodemailer.createTransport({
-        host: account.smtpHost,
-        port: Number(account.smtpPort),
-        secure: Number(account.smtpPort) === 465,
-        name: domain,
-        auth: {
-          user: account.smtpUser || account.email,
-          pass: smtpPassword,
-        },
-        requireTLS: Number(account.smtpPort) === 587,
-        tls: {
-          rejectUnauthorized: false,
-          minVersion: "TLSv1.2",
-        },
-      });
+        const transporter = nodemailer.createTransport({
+          host: account.smtpHost,
+          port: Number(account.smtpPort),
+          secure: Number(account.smtpPort) === 465,
+          name: domain,
+          auth: {
+            user: account.smtpUser || account.email,
+            pass: smtpPassword,
+          },
+          requireTLS: Number(account.smtpPort) === 587,
+          tls: {
+            rejectUnauthorized: false,
+            minVersion: "TLSv1.2",
+          },
+        });
 
-      const fromEmail = account.smtpUser || account.email;
+        const fromEmail = account.smtpUser || account.email;
 
-      // ✅ ADD RATE LIMITING
-      let accountSendCount = 0;
-      let accountStartTime = Date.now();
+        let accountSendCount = 0;
+        let accountStartTime = Date.now();
 
-      for (let i = 0; i < group.length; i++) {
-            // stop cmapign
-            const latestCampaign = await prisma.campaign.findUnique({
-              where: { id: campaignId },
-              select: { status: true }
+        for (let i = 0; i < group.length; i++) {
+
+          // 🔴 Stop campaign check
+          const latestCampaign = await prisma.campaign.findUnique({
+            where: { id: campaignId },
+            select: { status: true }
+          });
+
+          if (latestCampaign.status !== "sending") {
+            console.log("⏹ Campaign manually stopped:", campaignId);
+            return;
+          }
+
+          const r = group[i];
+
+          try {
+
+            // ✅ Rate limit check
+            if (accountSendCount >= limit) {
+              const timeSinceStart = Date.now() - accountStartTime;
+
+              if (timeSinceStart < 60 * 60 * 1000) {
+                const waitTime = (60 * 60 * 1000) - timeSinceStart;
+                console.log(`⏳ ${account.email} limit reached. Waiting ${Math.ceil(waitTime / 60000)} minutes...`);
+                await sleep(waitTime);
+              }
+
+              accountSendCount = 0;
+              accountStartTime = Date.now();
+            }
+
+            // ==============================
+            // FOLLOW-UP HTML BUILDING
+            // ==============================
+
+            const followupBodyRaw = pitchPlan[i];
+            const followupBody = normalizeHtmlForEmail(followupBodyRaw);
+
+            const baseStyles = extractBaseStyles(followupBody);
+
+            const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
+            if (!baseStyles.color || unsafeColors.includes(baseStyles.color.toLowerCase())) {
+              baseStyles.color = "#000000";
+            }
+
+            const signature = buildSignature(account, baseStyles);
+            const followupWithSignature = followupBody + signature;
+
+            let originalBodyHtml = r.sentBodyHtml || "";
+            const originalSubject = r.sentSubject || subjects[0];
+            const originalFrom = r.sentFromEmail || account.email;
+
+            const originalDate = r.sentAt ? new Date(r.sentAt) : new Date();
+            const sentAt = originalDate.toLocaleString("en-US", {
+              month: "numeric",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: false
             });
 
-            if (latestCampaign.status !== "sending") {
-              console.log("⏹ Campaign manually stopped:", campaignId);
+            const threadedHtml = buildFollowupHtml({
+              followUpBody: followupWithSignature,
+              originalBody: originalBodyHtml,
+              from: originalFrom,
+              to: r.email,
+              sentAt: sentAt,
+              subject: originalSubject
+            });
+
+            const html = `<!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="margin:0; padding:0; font-family: Calibri, sans-serif;">
+              ${threadedHtml}
+            </body>
+            </html>`;
+
+            const label = getDomainLabel(r.email);
+            const subject = `Re: ${label} - ${originalSubject}`;
+
+            await transporter.sendMail({
+              from: account.senderName
+                ? `"${account.senderName}" <${fromEmail}>`
+                : fromEmail,
+              to: r.email,
+              subject,
+              html,
+            });
+
+            await prisma.campaignRecipient.update({
+              where: { id: r.id },
+              data: { status: "sent", sentAt: new Date() }
+            });
+
+            accountSendCount++;
+
+            console.log(`✅ [FOLLOWUP] ${account.email} → ${r.email} (${accountSendCount}/${limit})`);
+
+            await sleep(delayPerEmail);
+
+          } catch (err) {
+
+            console.error(`❌ Failed followup to ${r.email}:`, err.message);
+
+            await prisma.campaignRecipient.update({
+              where: { id: r.id },
+              data: { status: "failed", error: err.message }
+            });
+
+            if (
+              err.message.includes("Invalid login") ||
+              err.message.includes("authentication failed")
+            ) {
+              await prisma.campaign.update({
+                where: { id: campaignId },
+                data: {
+                  status: "failed",
+                  error: `Authentication failed for ${account.email}`
+                }
+              });
+
+              await updateCampaignStatus(campaignId);
               return;
             }
-
-        const r = group[i];
-
-        try {
-          // ✅ RATE LIMIT CHECK
-          if (accountSendCount >= limit) {
-            const timeSinceStart = Date.now() - accountStartTime;
-
-            if (timeSinceStart < 60 * 60 * 1000) {
-              const waitTime = (60 * 60 * 1000) - timeSinceStart;
-              console.log(`⏳ ${account.email} limit reached. Waiting ${Math.ceil(waitTime / 60000)} minutes...`);
-              await sleep(waitTime);
-            }
-
-            accountSendCount = 0;
-            accountStartTime = Date.now();
-          }
-
-          // Get follow-up body for this recipient
-          const followupBodyRaw = pitchPlan[i];
-          const followupBody = normalizeHtmlForEmail(followupBodyRaw);
-
-          const baseStyles = extractBaseStyles(followupBody);
-
-          const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
-          if (!baseStyles.color || unsafeColors.includes(baseStyles.color.toLowerCase())) {
-            baseStyles.color = "#000000";
-          }
-
-          const signature = buildSignature(account, baseStyles);
-          const followupWithSignature = followupBody + signature;
-
-          // ✅ Get ACTUAL sent email data from recipient record
-          let originalBodyHtml = r.sentBodyHtml || "";
-          const originalSubject = r.sentSubject || subjects[0];
-          const originalFrom = r.sentFromEmail || account.email;
-          
-          // Format the sent date
-          const originalDate = r.sentAt ? new Date(r.sentAt) : new Date();
-          const sentAt = originalDate.toLocaleString("en-US", {
-            month: "numeric",
-            day: "numeric",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: false
-          });
-
-          // ✅ Build threaded email with exact preview structure
-          const threadedHtml = buildFollowupHtml({
-            followUpBody: followupWithSignature,
-            originalBody: originalBodyHtml,
-            from: originalFrom,
-            to: r.email,
-            sentAt: sentAt,
-            subject: originalSubject
-          });
-
-          const html = `<!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body style="margin:0; padding:0; font-family: Calibri, sans-serif;">
-            ${threadedHtml}
-          </body>
-          </html>
-          `;
-
-          // ✅ Subject should be "Re: original subject"
-          const label = getDomainLabel(r.email);
-          const subject = `Re: ${label} - ${originalSubject}`;
-
-          await transporter.sendMail({
-            from: account.senderName
-              ? `"${account.senderName}" <${fromEmail}>`
-              : fromEmail,
-            to: r.email,
-            subject: subject,
-            html,
-          });
-
-          await prisma.campaignRecipient.update({
-            where: { id: r.id },
-            data: { status: "sent", sentAt: new Date() }
-          });
-
-          accountSendCount++;
-
-          console.log(`✅ [FOLLOWUP] ${account.email} → ${r.email} (${accountSendCount}/${limit})`);
-
-          await sleep(delayPerEmail);
-
-        } catch (err) {
-          console.error(`❌ Failed followup to ${r.email}:`, err.message);
-
-          await prisma.campaignRecipient.update({
-            where: { id: r.id },
-            data: { status: "failed", error: err.message }
-          });
-
-          // Stop if authentication failed
-          if (
-            err.message.includes("Invalid login") ||
-            err.message.includes("authentication failed")
-          ) {
-            await prisma.campaign.update({
-              where: { id: campaignId },
-              data: { 
-                status: "failed",
-                error: `Authentication failed for ${account.email}` 
-              }
-            });
-
-            console.log("Campaign stopping due to error:", err.message);
-            await updateCampaignStatus(campaignId); 
-            return; 
           }
         }
-      }
-    }
+
+      })
+    );
+
   }
 
   // ============================================================

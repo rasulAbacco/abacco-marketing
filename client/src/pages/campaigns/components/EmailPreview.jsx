@@ -1604,13 +1604,13 @@ const fetchTemplates = async () => {
 
           <div className="flex items-center gap-2">
             {/* ✏️ Edit Lead */}
-            <button
+            {/* <button
               onClick={handleOpenEditLead}
               className="p-2 hover:bg-indigo-50 rounded-lg transition-colors group"
               title="Edit Lead Info"
             >
               <Pencil className="w-4 h-4 text-gray-600 group-hover:text-indigo-600" />
-            </button>
+            </button> */}
 
             {/* 📥 SPAM → INBOX */}
             {selectedFolder === "spam" && (
@@ -1626,46 +1626,46 @@ const fetchTemplates = async () => {
             {/* 🗑️ TRASH ACTIONS */}
              
            {selectedFolder === "trash" ? (
-  <>
-    {/* Restore */}
-    <button
-      onClick={handleRestore}
-      className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
-      title="Restore to Inbox"
-    >
-      <RotateCw className="w-4 h-4 text-emerald-600" />
-    </button>
+              <>
+                {/* Restore */}
+                <button
+                  onClick={handleRestore}
+                  className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
+                  title="Restore to Inbox"
+                >
+                  <RotateCw className="w-4 h-4 text-emerald-600" />
+                </button>
 
-    {/* Permanent Delete */}
-    <button
-      onClick={handlePermanentDelete}
-      className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
-      title="Delete Permanently"
-    >
-      <Trash2 className="w-4 h-4 text-red-600" />
-    </button>
-  </>
-) : (
-  <>
-    {/* ✅ UPDATED: Save to Draft - ALWAYS VISIBLE */}
-    <button
-      onClick={handleSaveToDraft}
-      className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
-      title="Save to Drafts"
-    >
-      <FileEdit className="w-4 h-4 text-gray-600 group-hover:text-blue-600" />
-    </button>
+                {/* Permanent Delete */}
+                <button
+                  onClick={handlePermanentDelete}
+                  className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
+                  title="Delete Permanently"
+                >
+                  <Trash2 className="w-4 h-4 text-red-600" />
+                </button>
+              </>
+            ) : (
+              <>
+                {/* ✅ UPDATED: Save to Draft - ALWAYS VISIBLE */}
+                <button
+                  onClick={handleSaveToDraft}
+                  className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
+                  title="Save to Drafts"
+                >
+                  <FileEdit className="w-4 h-4 text-gray-600 group-hover:text-blue-600" />
+                </button>
 
-    {/* Move to Trash */}
-    <button
-      onClick={handleTrashClick}
-      className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
-      title="Move to Trash"
-    >
-      <Trash2 className="w-4 h-4 text-gray-600 group-hover:text-red-600" />
-    </button>
-  </>
-)}
+                {/* Move to Trash */}
+                <button
+                  onClick={handleTrashClick}
+                  className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
+                  title="Move to Trash"
+                >
+                  <Trash2 className="w-4 h-4 text-gray-600 group-hover:text-red-600" />
+                </button>
+              </>
+            )}
 
             {/* ➕ Add Lead */}
             <button

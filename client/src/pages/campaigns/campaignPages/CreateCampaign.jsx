@@ -111,6 +111,8 @@ export default function CreateCampaign() {
   const [currentColor, setCurrentColor] = useState("#000000");
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [customSize, setCustomSize] = useState("");
+  const fromDropdownRef = useRef(null);
+  const pitchDropdownRef = useRef(null);
 
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -438,6 +440,40 @@ export default function CreateCampaign() {
     .map(s => s.trim())
     .filter(Boolean).length;
 
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+
+      // Close From Dropdown
+      if (
+        fromDropdownRef.current &&
+        !fromDropdownRef.current.contains(event.target)
+      ) {
+        setShowFromDropdown(false);
+      }
+
+      // Close Pitch Dropdown
+      if (
+        pitchDropdownRef.current &&
+        !pitchDropdownRef.current.contains(event.target)
+      ) {
+        setShowPitchDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+
+
+
+
+
+
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 min-h-screen relative overflow-hidden">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -517,7 +553,7 @@ export default function CreateCampaign() {
               {nameError && <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded-lg border border-red-200 font-semibold">{nameError}</p>}
             </div>
 
-            <div className="relative">
+            <div ref={fromDropdownRef} className="relative">
               <label className="block text-sm font-bold text-emerald-600 mb-2 uppercase tracking-wide flex items-center gap-2">
                 <Mail size={16} />
                 From Email Accounts
@@ -538,7 +574,11 @@ export default function CreateCampaign() {
 
               <button
                 type="button"
-                onClick={() => setShowFromDropdown(!showFromDropdown)}
+                 onClick={() => {
+                  setShowFromDropdown(!showFromDropdown); // open/close this dropdown
+                  setShowPitchDropdown(false);            // close pitch dropdown
+                 }}
+                
                 className="w-full border border-emerald-200 rounded-xl p-3.5 text-left flex justify-between items-center bg-white hover:border-emerald-300 transition-all font-medium"
               >
                 <span className="text-slate-700">
@@ -668,11 +708,14 @@ export default function CreateCampaign() {
               </p>
             </div>
 
-            <div className="relative">
+            <div ref={pitchDropdownRef} className="relative">
               <label className="block text-sm font-bold text-emerald-600 mb-2 uppercase tracking-wide">Pitch Templates (Optional)</label>
               <button
                 type="button"
-                onClick={() => setShowPitchDropdown(!showPitchDropdown)}
+                 onClick={() => {
+                    setShowPitchDropdown(!showPitchDropdown); // open/close pitch dropdown
+                    setShowFromDropdown(false);               // close from dropdown
+                  }}
                 className="w-full border border-emerald-200 rounded-xl p-3.5 text-left flex justify-between items-center bg-white hover:border-emerald-300 transition-all font-medium"
               >
                 <span className="text-slate-700">

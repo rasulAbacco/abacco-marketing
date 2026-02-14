@@ -12,7 +12,9 @@ import {
   deleteCampaign,
   getCampaignsForFollowup,
   getSingleCampaign,
-  stopCampaign
+  stopCampaign,
+  updateFollowupRecipients,      // ✅ ADD
+  sendFollowupCampaign           // ✅ ADD
 } from "../controllers/campaigns.controller.js";
 
 const router = express.Router();
@@ -45,5 +47,10 @@ router.post("/:id/schedule", protect, scheduleCampaign);
 router.delete("/:id", protect, deleteCampaign);
 router.post("/:id/stop", protect, stopCampaign);
 
+// Update followup recipients
+router.post("/followup/update-recipients", protect, updateFollowupRecipients);
+
+// Send followup manually
+router.post("/followup/:id/send", protect, sendFollowupCampaign);
 
 export default router;
