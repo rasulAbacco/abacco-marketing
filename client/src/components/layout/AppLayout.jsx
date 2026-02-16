@@ -26,11 +26,11 @@ export default function AppLayout({ children }) {
 
       <div className="flex-1 flex flex-col">
 
-        <Navbar setSidebarOpen={setSidebarOpen} />
+        {/* <Navbar setSidebarOpen={setSidebarOpen} /> */}
 
         <main
           className={`
-            mt-16 p-6 min-h-screen
+            p-6 min-h-screen
             transition-all duration-300
             ${expanded ? "ml-72" : "ml-16"}
           `}

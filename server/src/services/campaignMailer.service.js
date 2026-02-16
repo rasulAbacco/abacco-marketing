@@ -47,7 +47,7 @@ function buildFollowupHtml({
 
       <!-- Thread header -->
       <div style="
-        font-size:13px;
+        font-size:14px;
         line-height:1.5;
         color:${baseColor};
       ">
@@ -429,7 +429,7 @@ export async function sendBulkCampaign(campaignId) {
 
             accountSendCount++;
 
-            console.log(`✅ [FOLLOWUP] ${account.email} → ${r.email} (${accountSendCount}/${limit})`);
+            // console.log(`✅ [FOLLOWUP] ${account.email} → ${r.email} (${accountSendCount}/${limit})`);
 
             await sleep(delayPerEmail);
 

@@ -605,7 +605,7 @@ const logoutAccount = async () => {
           {/* Logout confirmation modal */}
           {showLogoutConfirm && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-gray-700 p-6 rounded-xl">
+              <div className="bg-gray-100 p-6 rounded-xl">
                 <h3 className="text-lg font-bold mb-4">Confirm Logout</h3>
                 <p className="mb-6">
                   Are you sure you want to logout this email account?
@@ -613,7 +613,7 @@ const logoutAccount = async () => {
                 <div className="flex justify-end space-x-3">
                   <button
                     onClick={() => setShowLogoutConfirm(false)}
-                    className="px-4 py-2 bg-gray-600 rounded hover:bg-gray-500"
+                    className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-500"
                   >
                     Cancel
                   </button>
