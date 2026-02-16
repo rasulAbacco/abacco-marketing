@@ -307,65 +307,51 @@ export const deleteUser = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    try {
-      // ✅ Attempt to delete user
-      await prisma.user.delete({ where: { id } });
+    // ✅ Find all email accounts belonging to this user
+    const emailAccounts = await prisma.emailAccount.findMany({
+      where: { userId: id },
+      select: { id: true }
+    });
 
-      console.log("✅ User deleted:", existingUser.email);
+    const emailAccountIds = emailAccounts.map(acc => acc.id);
 
-      res.json({ 
-        message: "User deleted successfully",
-        deletedUser: {
-          id: existingUser.id,
-          email: existingUser.email,
-          name: existingUser.name,
+    // ✅ Delete related records in correct order (to respect foreign key constraints)
+    if (emailAccountIds.length > 0) {
+      // 1. Delete all email messages associated with these email accounts
+      await prisma.emailMessage.deleteMany({
+        where: {
+          emailAccountId: { in: emailAccountIds }
         }
       });
-    } catch (deleteError) {
-      console.error("❌ Delete error details:", deleteError);
-      
-      // ✅ Handle Prisma foreign key constraint errors (P2003, P2014)
-      // AND PostgreSQL foreign key errors (code 23503 or 23001 in error message)
-      const isForeignKeyError = 
-        deleteError.code === 'P2003' || 
-        deleteError.code === 'P2014' ||
-        deleteError.message?.includes('foreign key constraint') ||
-        deleteError.message?.includes('violates RESTRICT') ||
-        deleteError.message?.includes('23503') ||
-        deleteError.message?.includes('23001');
-      
-      if (isForeignKeyError) {
-        console.log("❌ Cannot delete user - has related records:", existingUser.email);
-        
-        return res.status(400).json({ 
-          error: "Cannot delete this user because they have associated data (email accounts, campaigns, leads, messages, etc.). Please deactivate the user instead by toggling their status to 'Inactive'.",
-          suggestion: "Use the 'Inactive' button to disable this account instead of deleting it."
-        });
-      }
-      
-      // ✅ Re-throw other errors
-      throw deleteError;
+      console.log(`🗑️ Deleted email messages for ${emailAccountIds.length} email account(s)`);
+
+      // 2. Delete all email accounts
+      await prisma.emailAccount.deleteMany({
+        where: { userId: id }
+      });
+      console.log(`🗑️ Deleted ${emailAccountIds.length} email account(s)`);
     }
+
+    // 3. Delete any other related records (add more if needed based on your schema)
+    // Example: If you have other tables with userId foreign key
+    // await prisma.otherTable.deleteMany({ where: { userId: id } });
+
+    // 4. Finally, delete the user
+    await prisma.user.delete({ where: { id } });
+
+    console.log("✅ User deleted:", existingUser.email);
+
+    res.json({ 
+      message: "User and all related data deleted successfully",
+      deletedUser: {
+        id: existingUser.id,
+        email: existingUser.email,
+        name: existingUser.name,
+      }
+    });
   } catch (err) {
     console.error("Delete user error:", err);
-    
-    // ✅ Provide user-friendly error message for any constraint violation
-    const isForeignKeyError = 
-      err.code === 'P2003' || 
-      err.code === 'P2014' ||
-      err.message?.includes('foreign key constraint') ||
-      err.message?.includes('violates RESTRICT') ||
-      err.message?.includes('23503') ||
-      err.message?.includes('23001');
-    
-    if (isForeignKeyError) {
-      return res.status(400).json({ 
-        error: "Cannot delete this user because they have associated data (email accounts, campaigns, leads, messages, etc.). Please deactivate the user instead.",
-        suggestion: "Use the 'Inactive' button to disable this account."
-      });
-    }
-    
-    res.status(500).json({ error: err.message || "Failed to delete user" });
+    res.status(500).json({ error: err.message });
   }
 };
 
