@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import AddEmp from "./AddEmp";
 import { api } from "../utils/api";
-import { Users, UserCheck, UserX, Briefcase, Pencil, Trash2, Search, X,Eye, EyeOff } from "lucide-react";
+import { Users, UserCheck, UserX, Briefcase, Pencil, Trash2, Search, X, Eye, EyeOff } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -37,9 +37,19 @@ export default function UsersPage() {
       try {
         await api.delete(`${API_BASE_URL}/api/users/${userId}`);
         fetchUsers();
+        alert(`✅ ${userName} has been deleted successfully.`);
       } catch (error) {
         console.error("Error deleting employee:", error);
-        alert(error.response?.data?.error || "Failed to delete employee");
+        
+        // ✅ Show user-friendly error message
+        const errorMessage = error.response?.data?.error || "Failed to delete employee";
+        const suggestion = error.response?.data?.suggestion;
+        
+        if (suggestion) {
+          alert(`❌ ${errorMessage}\n\n💡 ${suggestion}`);
+        } else {
+          alert(`❌ ${errorMessage}`);
+        }
       }
     }
   };
@@ -56,6 +66,7 @@ export default function UsersPage() {
       );
     } catch (err) {
       console.log("Status update error:", err);
+      alert("Failed to update user status");
     }
   };
 
@@ -253,7 +264,7 @@ export default function UsersPage() {
                       <button
                         onClick={() => handleDelete(u.id, u.name)}
                         className="p-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-all duration-200 hover:scale-110"
-                        title="Delete"
+                        title="Delete (or deactivate if has data)"
                       >
                         <Trash2 size={18} />
                       </button>

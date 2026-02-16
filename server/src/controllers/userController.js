@@ -307,22 +307,46 @@ export const deleteUser = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // ✅ Delete user
-    await prisma.user.delete({ where: { id } });
+    try {
+      // ✅ Attempt to delete user
+      await prisma.user.delete({ where: { id } });
 
-    console.log("✅ User deleted:", existingUser.email);
+      console.log("✅ User deleted:", existingUser.email);
 
-    res.json({ 
-      message: "User deleted successfully",
-      deletedUser: {
-        id: existingUser.id,
-        email: existingUser.email,
-        name: existingUser.name,
+      res.json({ 
+        message: "User deleted successfully",
+        deletedUser: {
+          id: existingUser.id,
+          email: existingUser.email,
+          name: existingUser.name,
+        }
+      });
+    } catch (deleteError) {
+      // ✅ Handle foreign key constraint errors
+      if (deleteError.code === 'P2003') {
+        console.log("❌ Cannot delete user - has related records:", existingUser.email);
+        
+        return res.status(400).json({ 
+          error: "Cannot delete this user because they have associated data (campaigns, leads, emails, etc.). Please deactivate the user instead by toggling their status to 'Inactive'.",
+          suggestion: "Use the 'Inactive' button to disable this account instead of deleting it."
+        });
       }
-    });
+      
+      // ✅ Re-throw other errors
+      throw deleteError;
+    }
   } catch (err) {
     console.error("Delete user error:", err);
-    res.status(500).json({ error: err.message });
+    
+    // ✅ Provide user-friendly error message
+    if (err.code === 'P2003') {
+      return res.status(400).json({ 
+        error: "Cannot delete this user because they have associated data. Please deactivate the user instead.",
+        suggestion: "Use the 'Inactive' button to disable this account."
+      });
+    }
+    
+    res.status(500).json({ error: err.message || "Failed to delete user" });
   }
 };
 
