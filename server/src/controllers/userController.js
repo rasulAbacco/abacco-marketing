@@ -322,12 +322,23 @@ export const deleteUser = async (req, res) => {
         }
       });
     } catch (deleteError) {
-      // ✅ Handle foreign key constraint errors
-      if (deleteError.code === 'P2003') {
+      console.error("❌ Delete error details:", deleteError);
+      
+      // ✅ Handle Prisma foreign key constraint errors (P2003, P2014)
+      // AND PostgreSQL foreign key errors (code 23503 or 23001 in error message)
+      const isForeignKeyError = 
+        deleteError.code === 'P2003' || 
+        deleteError.code === 'P2014' ||
+        deleteError.message?.includes('foreign key constraint') ||
+        deleteError.message?.includes('violates RESTRICT') ||
+        deleteError.message?.includes('23503') ||
+        deleteError.message?.includes('23001');
+      
+      if (isForeignKeyError) {
         console.log("❌ Cannot delete user - has related records:", existingUser.email);
         
         return res.status(400).json({ 
-          error: "Cannot delete this user because they have associated data (campaigns, leads, emails, etc.). Please deactivate the user instead by toggling their status to 'Inactive'.",
+          error: "Cannot delete this user because they have associated data (email accounts, campaigns, leads, messages, etc.). Please deactivate the user instead by toggling their status to 'Inactive'.",
           suggestion: "Use the 'Inactive' button to disable this account instead of deleting it."
         });
       }
@@ -338,10 +349,18 @@ export const deleteUser = async (req, res) => {
   } catch (err) {
     console.error("Delete user error:", err);
     
-    // ✅ Provide user-friendly error message
-    if (err.code === 'P2003') {
+    // ✅ Provide user-friendly error message for any constraint violation
+    const isForeignKeyError = 
+      err.code === 'P2003' || 
+      err.code === 'P2014' ||
+      err.message?.includes('foreign key constraint') ||
+      err.message?.includes('violates RESTRICT') ||
+      err.message?.includes('23503') ||
+      err.message?.includes('23001');
+    
+    if (isForeignKeyError) {
       return res.status(400).json({ 
-        error: "Cannot delete this user because they have associated data. Please deactivate the user instead.",
+        error: "Cannot delete this user because they have associated data (email accounts, campaigns, leads, messages, etc.). Please deactivate the user instead.",
         suggestion: "Use the 'Inactive' button to disable this account."
       });
     }
