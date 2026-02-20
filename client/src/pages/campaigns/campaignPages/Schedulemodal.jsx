@@ -82,7 +82,7 @@ export default function CampaignView({ campaignId, onClose }) {
   const isCampaignComplete = data && data.stats.processing === 0 && data.stats.completed === data.stats.total;
 
   // Determine the maximum number of rows needed
-  const maxRows = Math.max(allEmails.length, processingEmails.length, completedEmails.length);
+  const maxRows = Math.max(allEmails.length, processingEmails.length, completedEmails.length, failedEmails.length);
 
   return (
     <div 
@@ -216,7 +216,8 @@ export default function CampaignView({ campaignId, onClose }) {
                           Total Recipients {data.stats.total}
                         </h3>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
+                        {/* Copy All */}
                         <button
                           onClick={() => copyEmails(allEmails, 'all')}
                           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium shadow-sm"
@@ -231,12 +232,17 @@ export default function CampaignView({ campaignId, onClose }) {
                             <>
                               <Copy size={16} />
                               <span>Copy All</span>
+                              <span className="bg-blue-800 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                {allEmails.length}
+                              </span>
                             </>
                           )}
                         </button>
+
+                        {/* Copy Processing */}
                         <button
                           onClick={() => copyEmails(processingEmails, 'processing')}
-                          className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors text-sm font-medium shadow-sm"
+                          className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors text-sm font-medium shadow-sm"
                           title="Copy processing emails"
                         >
                           {copiedSection === 'processing' ? (
@@ -248,9 +254,14 @@ export default function CampaignView({ campaignId, onClose }) {
                             <>
                               <Copy size={16} />
                               <span>Copy Processing</span>
+                              <span className="bg-yellow-700 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                {processingEmails.length}
+                              </span>
                             </>
                           )}
                         </button>
+
+                        {/* Copy Completed */}
                         <button
                           onClick={() => copyEmails(completedEmails, 'completed')}
                           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-sm font-medium shadow-sm"
@@ -265,15 +276,40 @@ export default function CampaignView({ campaignId, onClose }) {
                             <>
                               <Copy size={16} />
                               <span>Copy Completed</span>
+                              <span className="bg-emerald-800 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                {completedEmails.length}
+                              </span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Copy Failed - always show */}
+                        <button
+                          onClick={() => copyEmails(failedEmails, 'failed')}
+                          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm font-medium shadow-sm"
+                          title="Copy failed emails"
+                        >
+                          {copiedSection === 'failed' ? (
+                            <>
+                              <Check size={16} />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={16} />
+                              <span>Copy Failed</span>
+                              <span className="bg-red-800 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                {failedEmails.length}
+                              </span>
                             </>
                           )}
                         </button>
                       </div>
                     </div>
 
-                    {/* Table Layout - 3 Columns with Vertical Email Lists */}
+                    {/* Table Layout - 4 Columns with Vertical Email Lists */}
                     <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
-                      <div className="grid grid-cols-3">
+                      <div className="grid grid-cols-4">
                         {/* Column Headers */}
                         <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">
                           Total Recipients {data.stats.total}
@@ -281,8 +317,11 @@ export default function CampaignView({ campaignId, onClose }) {
                         <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">
                           Processing count {data.stats.processing}
                         </div>
-                        <div className="bg-gray-100 border-b border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">
+                        <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">
                           Completed - {data.stats.completed}
+                        </div>
+                        <div className="bg-red-50 border-b border-gray-300 px-4 py-3 font-bold text-sm text-red-700">
+                          Failed - {data.stats.failed ?? 0}
                         </div>
 
                         {/* Email Rows */}
@@ -299,8 +338,13 @@ export default function CampaignView({ campaignId, onClose }) {
                             </div>
                             
                             {/* Completed Column */}
-                            <div className="border-b border-gray-200 px-4 py-2.5 text-sm text-gray-700">
+                            <div className="border-b border-r border-gray-200 px-4 py-2.5 text-sm text-gray-700">
                               {completedEmails[rowIndex] || ''}
+                            </div>
+
+                            {/* Failed Column - always shown */}
+                            <div className="border-b border-gray-200 px-4 py-2.5 text-sm text-red-600">
+                              {failedEmails[rowIndex] || ''}
                             </div>
                           </React.Fragment>
                         ))}
