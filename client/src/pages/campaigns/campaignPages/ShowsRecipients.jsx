@@ -11,6 +11,9 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteMessage, setDeleteMessage] = useState("");
 
+  // ✅ NEW: checkbox selection state
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
   // Fetch recipients on mount
   useEffect(() => {
     const fetchRecipients = async () => {
@@ -62,25 +65,75 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
     setFilteredRecipients(filtered);
   }, [searchTerm, recipients]);
 
-  // Delete single recipient
+  // ✅ NEW: Toggle single checkbox
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // ✅ NEW: Select all / deselect all (only visible/filtered rows)
+  const allFilteredSelected =
+    filteredRecipients.length > 0 &&
+    filteredRecipients.every((r) => selectedIds.has(r.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      // Deselect all filtered
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredRecipients.forEach((r) => next.delete(r.id));
+        return next;
+      });
+    } else {
+      // Select all filtered
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredRecipients.forEach((r) => next.add(r.id));
+        return next;
+      });
+    }
+  };
+
+  // ✅ NEW: Delete all selected
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    setRecipients((prev) => prev.filter((r) => !selectedIds.has(r.id)));
+    setFilteredRecipients((prev) => prev.filter((r) => !selectedIds.has(r.id)));
+    setSelectedIds(new Set());
+    setDeleteMessage(`Deleted ${count} recipient${count > 1 ? "s" : ""}`);
+    setTimeout(() => setDeleteMessage(""), 3000);
+  };
+
+  // Delete single recipient (unchanged)
   const handleDelete = (recipientId) => {
     const recipient = recipients.find((r) => r.id === recipientId);
     
     setRecipients((prev) => prev.filter((r) => r.id !== recipientId));
     setFilteredRecipients((prev) => prev.filter((r) => r.id !== recipientId));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(recipientId);
+      return next;
+    });
     
-    // Show temporary delete message
     setDeleteMessage(`Deleted: ${recipient?.email || "Recipient"}`);
     setTimeout(() => setDeleteMessage(""), 3000);
   };
 
-  // Save remaining recipients
+  // Save remaining recipients (unchanged — same API, same payload)
   const handleSave = async () => {
     try {
       setSaving(true);
       const token = localStorage.getItem("token");
 
-      // Ensure campaignId is a number and recipients have all required fields
       const payload = {
         campaignId: Number(campaignId),
         recipients: recipients.map(r => ({
@@ -109,7 +162,7 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
       console.log("Save response:", data);
 
       if (data.success) {
-        onUpdated(); // Refresh parent component
+        onUpdated();
       } else {
         console.error("Save failed:", data);
         alert(`Failed to save recipients: ${data.message || "Please try again."}`);
@@ -144,10 +197,7 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
             style={searchInputStyle}
           />
           {searchTerm && (
-            <button
-              onClick={() => setSearchTerm("")}
-              style={clearSearchStyle}
-            >
+            <button onClick={() => setSearchTerm("")} style={clearSearchStyle}>
               <X size={16} />
             </button>
           )}
@@ -158,6 +208,19 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
           <div style={deleteMessageStyle}>
             <UserX size={16} />
             <span>{deleteMessage}</span>
+          </div>
+        )}
+
+        {/* ✅ NEW: Bulk action bar — shown only when items are selected */}
+        {selectedIds.size > 0 && (
+          <div style={bulkBarStyle}>
+            <span style={{ fontSize: "13px", fontWeight: "600", color: "#1d4ed8" }}>
+              {selectedIds.size} selected
+            </span>
+            <button onClick={handleDeleteSelected} style={bulkDeleteBtnStyle}>
+              <Trash2 size={15} />
+              Delete Selected ({selectedIds.size})
+            </button>
           </div>
         )}
 
@@ -184,31 +247,59 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
           </div>
         ) : (
           <div style={recipientsListStyle}>
-            {filteredRecipients.map((r) => (
-              <div key={r.id} style={rowStyle}>
-                <div style={emailContainerStyle}>
-                  <span style={emailStyle}>{r.email}</span>
-                  {r.status && (
-                    <span style={statusBadgeStyle(r.status)}>
-                      {r.status}
-                    </span>
-                  )}
-                </div>
 
-                <button
-                  style={deleteBtn}
-                  onClick={() => handleDelete(r.id)}
-                  title="Remove this recipient"
+            {/* ✅ NEW: Select All header row */}
+            <div style={selectAllRowStyle}>
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAll}
+                  style={checkboxStyle}
+                />
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "#374151" }}>
+                  {allFilteredSelected ? "Deselect All" : "Select All"}
+                  {filteredRecipients.length !== recipients.length
+                    ? ` (${filteredRecipients.length} visible)`
+                    : ` (${recipients.length})`}
+                </span>
+              </label>
+            </div>
+
+            {filteredRecipients.map((r) => {
+              const isSelected = selectedIds.has(r.id);
+              return (
+                <div
+                  key={r.id}
+                  style={{
+                    ...rowStyle,
+                    backgroundColor: isSelected ? "#eff6ff" : "transparent",
+                    borderLeft: isSelected ? "3px solid #3b82f6" : "3px solid transparent",
+                  }}
                 >
-                  <Trash2 size={16} />
-                  <span>Delete</span>
-                </button>
-              </div>
-            ))}
+                  {/* ✅ NEW: Per-row checkbox */}
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelect(r.id)}
+                    style={{ ...checkboxStyle, marginRight: "12px", flexShrink: 0 }}
+                  />
+
+                  <div style={emailContainerStyle}>
+                    <span style={emailStyle}>{r.email}</span>
+                    {r.status && (
+                      <span style={statusBadgeStyle(r.status)}>{r.status}</span>
+                    )}
+                  </div>
+
+                  
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* Footer Actions */}
+        {/* Footer Actions — unchanged */}
         <div style={footerStyle}>
           <button onClick={onClose} style={cancelBtn}>
             <X size={18} />
@@ -259,8 +350,9 @@ const modalStyle = {
   padding: "0",
   borderRadius: "12px",
   width: "90%",
-  maxWidth: "600px",
-  maxHeight: "90vh",
+  maxWidth: "650px",
+  minHeight: "500px",   // fixed minimum — modal won't shrink with few emails
+  maxHeight: "90vh",    // never overflows viewport
   display: "flex",
   flexDirection: "column",
   boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
@@ -337,6 +429,56 @@ const deleteMessageStyle = {
   fontWeight: "500",
 };
 
+// ✅ NEW styles
+const bulkBarStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  margin: "10px 24px 0",
+  padding: "10px 16px",
+  backgroundColor: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  borderRadius: "8px",
+};
+
+const bulkDeleteBtnStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "6px",
+  background: "#ef4444",
+  color: "#fff",
+  border: "none",
+  padding: "7px 14px",
+  borderRadius: "6px",
+  cursor: "pointer",
+  fontSize: "13px",
+  fontWeight: "600",
+  boxShadow: "0 2px 4px rgba(239, 68, 68, 0.25)",
+};
+
+const selectAllRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  padding: "10px 16px",
+  borderBottom: "2px solid #e5e7eb",
+  backgroundColor: "#f9fafb",
+};
+
+const checkboxLabelStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  cursor: "pointer",
+  userSelect: "none",
+};
+
+const checkboxStyle = {
+  width: "16px",
+  height: "16px",
+  accentColor: "#3b82f6",
+  cursor: "pointer",
+};
+
 const countStyle = {
   padding: "8px 24px",
   fontSize: "13px",
@@ -347,6 +489,8 @@ const countStyle = {
 const recipientsListStyle = {
   flex: 1,
   overflowY: "auto",
+  minHeight: "200px",   // always shows at least a few rows
+  maxHeight: "380px",   // scroll kicks in beyond this — list never grows modal height
   padding: "0 24px",
   marginBottom: "16px",
 };
@@ -358,9 +502,7 @@ const rowStyle = {
   padding: "14px 16px",
   borderBottom: "1px solid #e5e7eb",
   transition: "background-color 0.2s",
-  ":hover": {
-    backgroundColor: "#f9fafb",
-  },
+  borderRadius: "4px",
 };
 
 const emailContainerStyle = {

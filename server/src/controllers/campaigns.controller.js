@@ -577,7 +577,7 @@ export const getAllCampaigns = async (req, res) => {
  */
 export const getDashboardCampaigns = async (req, res) => {
   try {
-    const { range = "today", date } = req.query;
+    const { range = "all", date } = req.query;
 
     // 🔥 REDUCED CACHE TIME - 30 seconds instead of 60
     // This ensures more real-time updates
@@ -629,10 +629,23 @@ export const getDashboardCampaigns = async (req, res) => {
       })
     };
 
+    // ✅ PERF FIX: Exclude heavy fields (sentBodyHtml) from dashboard list query.
+    // The full body is only needed in the detail/view modal, not the dashboard.
     const campaigns = await prisma.campaign.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      include: { recipients: true }
+      include: {
+        recipients: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            accountId: true,
+            sentAt: true,
+            // sentBodyHtml intentionally excluded — large field not needed here
+          }
+        }
+      }
     });
 
     // Campaign counts
@@ -665,32 +678,36 @@ export const getDashboardCampaigns = async (req, res) => {
       });
     });
 
-    // Recent campaigns
-    const recentCampaigns = [];
-
+    // ✅ PERF FIX: Collect ALL account IDs from all campaigns in one pass,
+    // then do a SINGLE batch DB query instead of one query per campaign (N+1 fix)
+    const allAccountIds = new Set();
     for (const campaign of campaigns) {
-      let fromNames = [];
-
       try {
         const ids = JSON.parse(campaign.fromAccountIds || "[]");
-
-        if (ids.length) {
-          const accounts = await prisma.emailAccount.findMany({
-            where: { id: { in: ids } },
-            select: { email: true }
-          });
-
-          fromNames = accounts.map(
-            acc => acc.email.split("@")[0] + "@"
-          );
-        }
+        ids.forEach(id => allAccountIds.add(Number(id)));
       } catch {}
+    }
 
-      recentCampaigns.push({
-        ...campaign,
-        fromNames
+    let accountEmailMap = {};
+    if (allAccountIds.size > 0) {
+      const allAccounts = await prisma.emailAccount.findMany({
+        where: { id: { in: Array.from(allAccountIds) } },
+        select: { id: true, email: true }
+      });
+      allAccounts.forEach(acc => {
+        accountEmailMap[acc.id] = acc.email.split("@")[0] + "@";
       });
     }
+
+    // Recent campaigns — now uses the pre-fetched map, zero extra queries
+    const recentCampaigns = campaigns.map(campaign => {
+      let fromNames = [];
+      try {
+        const ids = JSON.parse(campaign.fromAccountIds || "[]");
+        fromNames = ids.map(id => accountEmailMap[Number(id)]).filter(Boolean);
+      } catch {}
+      return { ...campaign, fromNames };
+    });
 
     const responseData = {
       stats: {
@@ -705,8 +722,9 @@ export const getDashboardCampaigns = async (req, res) => {
       recentCampaigns
     };
 
-    // 🔥 Cache for only 5 seconds for near real-time updates
-    cache.set(cacheKey, responseData, 5);
+    // ✅ PERF FIX: Cache for 30 seconds — enough for real-time feel,
+    // but avoids hammering DB on every tab open / refresh.
+    cache.set(cacheKey, responseData, 30);
 
     return res.json({ success: true, data: responseData });
 
@@ -991,10 +1009,23 @@ export const getSingleCampaign = async (req, res) => {
   try {
     const id = Number(req.params.id);
 
+    // ✅ PERF FIX: Select only fields needed for the view modal.
+    // sentBodyHtml can be KB/MB per recipient — skip it here.
     const campaign = await prisma.campaign.findUnique({
       where: { id },
       include: {
-        recipients: true
+        recipients: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            accountId: true,
+            sentAt: true,
+            sentSubject: true,
+            sentFromEmail: true,
+            // sentBodyHtml intentionally excluded — large field not needed in view modal
+          }
+        }
       }
     });
 

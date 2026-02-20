@@ -1,5 +1,5 @@
 // client/src/pages/campaigns/CampaignList.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard,
   Send,
@@ -173,99 +173,34 @@ const CampaignProgress = ({ campaignId }) => {
 };
 
 const CampaignTiming = ({ campaign }) => {
-  const [timing, setTiming] = useState({
-    startTime: null,
-    endTime: null,
-    estimatedCompletion: null,
-    duration: null,
-    isActive: false
-  });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    calculateTiming();
-    const interval = campaign.status === "sending" ? setInterval(calculateTiming, 10000) : null;
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [campaign]);
-
-  const calculateTiming = async () => {
-    setLoading(true);
-    try {
-      if (campaign.status === "sending" || campaign.status === "completed" || campaign.status === "completed_with_errors") {
-        const firstSent = campaign.recipients?.find(r => r.sentAt);
-        const lastSent = campaign.recipients?.filter(r => r.sentAt).sort((a, b) => 
-          new Date(b.sentAt) - new Date(a.sentAt)
-        )[0];
-        
-        const startTime = firstSent?.sentAt ? new Date(firstSent.sentAt) : null;
-        const endTime = campaign.status === "completed" || campaign.status === "completed_with_errors" 
-          ? (lastSent?.sentAt ? new Date(lastSent.sentAt) : null)
-          : null;
-        
-        let estimatedCompletion = null;
-        let duration = null;
-
-        if (campaign.status === "sending" && startTime) {
-          try {
-            const progressRes = await api.get(`${API_BASE_URL}/api/campaigns/${campaign.id}/progress`);
-            if (progressRes.data.success) {
-              const progressRows = progressRes.data.data;
-              
-              let totalMinutes = 0;
-              progressRows.forEach(row => {
-                const eta = row.eta;
-                if (eta.includes('h')) {
-                  const parts = eta.split('h');
-                  const hours = parseInt(parts[0]) || 0;
-                  const mins = parts[1] ? parseInt(parts[1].replace('m', '').trim()) || 0 : 0;
-                  totalMinutes += hours * 60 + mins;
-                } else {
-                  totalMinutes += parseInt(eta.replace('m', '')) || 0;
-                }
-              });
-              
-              const avgMinutes = progressRows.length > 0 ? Math.ceil(totalMinutes / progressRows.length) : 0;
-              estimatedCompletion = new Date(Date.now() + avgMinutes * 60000);
-            }
-          } catch (error) {
-            console.error("Error fetching progress for timing:", error);
-          }
-        }
-
-        if (startTime && endTime) {
-          const durationMs = endTime - startTime;
-          const hours = Math.floor(durationMs / 3600000);
-          const minutes = Math.floor((durationMs % 3600000) / 60000);
-          duration = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-        }
-
-        setTiming({
-          startTime,
-          endTime,
-          estimatedCompletion,
-          duration,
-          isActive: campaign.status === "sending"
-        });
-      }
-    } catch (error) {
-      console.error("Error calculating timing:", error);
-    } finally {
-      setLoading(false);
+  // ✅ PERF FIX: Compute timing synchronously from already-loaded campaign data.
+  // Previously this made an extra /progress API call just to show timing — removed.
+  const timing = useMemo(() => {
+    if (campaign.status !== "sending" && campaign.status !== "completed" && campaign.status !== "completed_with_errors") {
+      return { startTime: null, endTime: null, estimatedCompletion: null, duration: null, isActive: false };
     }
-  };
 
-  if (loading) {
-    return (
-      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-5 border border-emerald-200/50 shadow-sm">
-        <div className="flex items-center gap-2">
-          <Loader2 className="w-4 h-4 text-slate-600 animate-spin" />
-          <span className="text-sm text-emerald-700 font-medium">Loading timing information...</span>
-        </div>
-      </div>
-    );
-  }
+    const sentRecipients = campaign.recipients?.filter(r => r.sentAt) || [];
+    const sorted = [...sentRecipients].sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));
+
+    const firstSent = sorted[0];
+    const lastSent = sorted[sorted.length - 1];
+
+    const startTime = firstSent?.sentAt ? new Date(firstSent.sentAt) : null;
+    const endTime = (campaign.status === "completed" || campaign.status === "completed_with_errors")
+      ? (lastSent?.sentAt ? new Date(lastSent.sentAt) : null)
+      : null;
+
+    let duration = null;
+    if (startTime && endTime) {
+      const durationMs = endTime - startTime;
+      const hours = Math.floor(durationMs / 3600000);
+      const minutes = Math.floor((durationMs % 3600000) / 60000);
+      duration = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+    }
+
+    return { startTime, endTime, duration, estimatedCompletion: null, isActive: campaign.status === "sending" };
+  }, [campaign]);
 
   return (
     <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 rounded-2xl p-5 border border-emerald-200/50 shadow-sm">
@@ -439,8 +374,8 @@ const DashboardTab = () => {
       const res = await api.delete(`${API_BASE_URL}/api/campaigns/${campaignId}`);
       
       if (res.data.success) {
-        setCampaigns(campaigns.filter(c => c.id !== campaignId));
-        await fetchCampaigns();
+        // ✅ PERF FIX: Update local state directly — no need for a second full API call
+        setCampaigns(prev => prev.filter(c => c.id !== campaignId));
       }
     } catch (err) {
       console.error("Error deleting campaign:", err);
@@ -479,14 +414,30 @@ const stopCampaign = async (id) => {
   };
 
   if (loading) {
+    // ✅ PERF FIX: Show skeleton UI immediately instead of blocking spinner.
+    // Page feels instant — data fills in as it loads.
     return (
-      <div className="flex items-center justify-center py-32">
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative">
-            <div className="absolute inset-0 bg-emerald-500 rounded-full blur-xl opacity-30 animate-pulse"></div>
-            <Loader2 className="relative w-10 h-10 text-slate-600 animate-spin" />
-          </div>
-          <p className="text-emerald-600 text-base font-semibold">Loading campaigns...</p>
+      <div className="space-y-6 animate-pulse">
+        {/* Skeleton stat cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white/70 rounded-2xl p-6 border border-emerald-100 h-32">
+              <div className="w-12 h-12 bg-emerald-100 rounded-xl mb-4" />
+              <div className="h-3 bg-emerald-100 rounded w-3/4 mb-2" />
+              <div className="h-6 bg-emerald-100 rounded w-1/2" />
+            </div>
+          ))}
+        </div>
+        {/* Skeleton table rows */}
+        <div className="bg-white/70 rounded-2xl border border-emerald-100 overflow-hidden">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="flex gap-4 px-6 py-4 border-b border-emerald-50">
+              <div className="h-4 bg-emerald-100 rounded flex-1" />
+              <div className="h-4 bg-emerald-100 rounded w-20" />
+              <div className="h-4 bg-emerald-100 rounded w-24" />
+              <div className="h-4 bg-emerald-100 rounded w-16" />
+            </div>
+          ))}
         </div>
       </div>
     );

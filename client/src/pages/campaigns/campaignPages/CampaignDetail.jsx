@@ -249,8 +249,10 @@ export default function CampaignDetail() {
         return;
       }
 
-      // Build senderRecipientMap - distribute recipients across sender accounts
-      const recipients = loadedCampaign.recipients || [];
+      // Build senderRecipientMap - distribute ONLY completed (sent) recipients across sender accounts
+      const recipients = (loadedCampaign.recipients || []).filter(
+        r => r.status === "sent" || r.status === "completed"
+      );
       const senderRecipientMap = {};
       
       recipients.forEach((recipient, index) => {
@@ -399,11 +401,14 @@ export default function CampaignDetail() {
                   className="w-full px-5 py-3.5 border-2 border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all bg-white/80 text-slate-800 font-medium"
                 >
                   <option value="">-- Choose a campaign --</option>
-                  {campaigns.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.recipients?.length || 0} recipients)
-                    </option>
-                  ))}
+                  {campaigns.map((c) => {
+                    const completedCount = c.recipients?.filter(r => r.status === "sent" || r.status === "completed").length || 0;
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({completedCount} recipients)
+                      </option>
+                    );
+                  })}
                 </select>
               </CardContent>
             </Card>
@@ -517,7 +522,7 @@ export default function CampaignDetail() {
                   <div className="font-bold text-emerald-900">Sent: <span className="font-normal text-slate-700">{new Date(loadedCampaign.createdAt).toLocaleString()}</span></div>
                   <div className="font-bold text-emerald-900">To: <span className="font-normal text-slate-700">{loadedCampaign.recipients?.[0]?.email || "—"}</span></div>
                   <div className="text-xs text-emerald-600 font-semibold">
-                    Will send to total {loadedCampaign.recipients?.length || 0} recipients (distributed automatically)
+                    Will send to total {loadedCampaign?.recipients?.filter(r => r.status === "sent" || r.status === "completed").length || 0} recipients (distributed automatically)
                   </div>
                    
                   <div className="font-bold text-emerald-900">Subject: <span className="font-normal text-slate-700">{subjects[0]}</span></div>
@@ -588,7 +593,7 @@ export default function CampaignDetail() {
                     Recipients
                   </p>
                   <p className="font-black text-slate-900 text-2xl">
-                    {loadedCampaign?.recipients?.length || 0}
+                    {loadedCampaign?.recipients?.filter(r => r.status === "sent" || r.status === "completed").length || 0}
                   </p>
                 </div>
                 

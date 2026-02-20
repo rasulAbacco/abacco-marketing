@@ -1,8 +1,54 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { X, Loader2, Users, CheckCircle, Clock, AlertCircle, Copy, Check } from "lucide-react";
 import { api } from "../../utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+// ✅ PERF FIX: Virtual list renders only ~20 visible rows instead of ALL rows.
+// With 1000+ recipients this makes the modal open near-instantly.
+const ROW_HEIGHT = 40;
+const VISIBLE_ROWS = 20;
+
+function VirtualEmailTable({ allEmails, processingEmails, completedEmails, failedEmails }) {
+  const maxRows = Math.max(allEmails.length, processingEmails.length, completedEmails.length, failedEmails.length);
+  const containerRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 2);
+  const endIndex = Math.min(maxRows, startIndex + VISIBLE_ROWS + 4);
+  const visibleRows = Array.from({ length: endIndex - startIndex }, (_, i) => startIndex + i);
+
+  return (
+    <div
+      ref={containerRef}
+      className="border border-gray-300 rounded-lg overflow-auto bg-white"
+      style={{ maxHeight: `${ROW_HEIGHT * VISIBLE_ROWS}px` }}
+      onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
+    >
+      {/* Fixed headers */}
+      <div className="grid grid-cols-3 sticky top-0 z-10">
+        <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">Total Recipients {allEmails.length}</div>
+        <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">Processing {processingEmails.length}</div>
+        <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">Completed {completedEmails.length}</div>
+        {/* <div className="bg-red-50 border-b border-gray-300 px-4 py-3 font-bold text-sm text-red-700">Failed {failedEmails.length}</div> */}
+      </div>
+
+      {/* Virtual scroll body */}
+      <div style={{ height: `${maxRows * ROW_HEIGHT}px`, position: "relative" }}>
+        <div style={{ position: "absolute", top: `${startIndex * ROW_HEIGHT}px`, width: "100%" }}>
+          {visibleRows.map(rowIndex => (
+            <div key={rowIndex} className="grid grid-cols-3" style={{ height: ROW_HEIGHT }}>
+              <div className="border-b border-r border-gray-200 px-4 py-2.5 text-sm text-gray-700 truncate">{allEmails[rowIndex] || ''}</div>
+              <div className="border-b border-r border-gray-200 px-4 py-2.5 text-sm text-gray-700 truncate">{processingEmails[rowIndex] || ''}</div>
+              <div className="border-b border-r border-gray-200 px-4 py-2.5 text-sm text-gray-700 truncate">{completedEmails[rowIndex] || ''}</div>
+              {/* <div className="border-b border-gray-200 px-4 py-2.5 text-sm text-red-600 truncate">{failedEmails[rowIndex] || ''}</div> */}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function CampaignView({ campaignId, onClose }) {
   const [data, setData] = useState(null);
@@ -86,11 +132,10 @@ export default function CampaignView({ campaignId, onClose }) {
 
   return (
     <div 
-      className="fixed inset-0 bg-black/20 backdrop-blur-sm flex z-[9999] p-4"
+      className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[9999] p-4"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl relative animate-fadeIn"
-      style={{marginLeft:"180px"}}>
+      <div className="bg-white w-full max-w-5xl mt-20 max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl relative animate-fadeIn mx-auto">
         
         {loading ? (
           // Loading State
@@ -307,49 +352,13 @@ export default function CampaignView({ campaignId, onClose }) {
                       </div>
                     </div>
 
-                    {/* Table Layout - 4 Columns with Vertical Email Lists */}
-                    <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
-                      <div className="grid grid-cols-4">
-                        {/* Column Headers */}
-                        <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">
-                          Total Recipients {data.stats.total}
-                        </div>
-                        <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">
-                          Processing count {data.stats.processing}
-                        </div>
-                        <div className="bg-gray-100 border-b border-r border-gray-300 px-4 py-3 font-bold text-sm text-gray-700">
-                          Completed - {data.stats.completed}
-                        </div>
-                        <div className="bg-red-50 border-b border-gray-300 px-4 py-3 font-bold text-sm text-red-700">
-                          Failed - {data.stats.failed ?? 0}
-                        </div>
-
-                        {/* Email Rows */}
-                        {Array.from({ length: maxRows }).map((_, rowIndex) => (
-                          <React.Fragment key={rowIndex}>
-                            {/* Total Recipients Column */}
-                            <div className="border-b border-r border-gray-200 px-4 py-2.5 text-sm text-gray-700">
-                              {allEmails[rowIndex] || ''}
-                            </div>
-                            
-                            {/* Processing Column */}
-                            <div className="border-b border-r border-gray-200 px-4 py-2.5 text-sm text-gray-700">
-                              {processingEmails[rowIndex] || ''}
-                            </div>
-                            
-                            {/* Completed Column */}
-                            <div className="border-b border-r border-gray-200 px-4 py-2.5 text-sm text-gray-700">
-                              {completedEmails[rowIndex] || ''}
-                            </div>
-
-                            {/* Failed Column - always shown */}
-                            <div className="border-b border-gray-200 px-4 py-2.5 text-sm text-red-600">
-                              {failedEmails[rowIndex] || ''}
-                            </div>
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
+                    {/* Table Layout - Virtualized for performance with large lists */}
+                    <VirtualEmailTable
+                      allEmails={allEmails}
+                      processingEmails={processingEmails}
+                      completedEmails={completedEmails}
+                      failedEmails={failedEmails}
+                    />
 
                     {/* Status Legend */}
                     <div className="flex items-center gap-6 mt-4 px-4">
