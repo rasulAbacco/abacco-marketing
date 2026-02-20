@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, Trash2, Save, X, Loader2, UserX } from "lucide-react";
+import { Search, Trash2, Save, X, Loader2, UserX, CheckCircle2, Mail } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -10,17 +10,15 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteMessage, setDeleteMessage] = useState("");
-
-  // ✅ NEW: checkbox selection state
   const [selectedIds, setSelectedIds] = useState(new Set());
 
-  // Fetch recipients on mount
+  // ✅ Fetch recipients — only sent/completed (as per backend campaign completed sent mails)
   useEffect(() => {
     const fetchRecipients = async () => {
       try {
         const token = localStorage.getItem("token");
         console.log("Fetching recipients for campaign:", campaignId);
-        
+
         const res = await fetch(`${API_BASE_URL}/api/campaigns/${campaignId}/view`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -31,10 +29,19 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
         console.log("Fetched campaign data:", data);
 
         if (data.success) {
-          const fetchedRecipients = data.data.campaign.recipients || [];
-          console.log("Recipients loaded:", fetchedRecipients.length);
-          setRecipients(fetchedRecipients);
-          setFilteredRecipients(fetchedRecipients);
+          const allRecipients = data.data.campaign.recipients || [];
+
+          // ✅ Only show recipients that were actually sent (sent or completed)
+          const sentRecipients = allRecipients.filter(
+            (r) => r.status === "sent" || r.status === "completed"
+          );
+
+          console.log(
+            `Recipients: total=${allRecipients.length}, sent/completed=${sentRecipients.length}`
+          );
+
+          setRecipients(sentRecipients);
+          setFilteredRecipients(sentRecipients);
         } else {
           console.error("Failed to load recipients:", data);
         }
@@ -51,48 +58,39 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
     }
   }, [campaignId]);
 
-  // Handle search filtering
+  // Search filter
   useEffect(() => {
     if (!searchTerm.trim()) {
       setFilteredRecipients(recipients);
       return;
     }
-
     const term = searchTerm.toLowerCase();
-    const filtered = recipients.filter((r) =>
-      r.email.toLowerCase().includes(term)
+    setFilteredRecipients(
+      recipients.filter((r) => r.email.toLowerCase().includes(term))
     );
-    setFilteredRecipients(filtered);
   }, [searchTerm, recipients]);
 
-  // ✅ NEW: Toggle single checkbox
+  // Toggle single checkbox
   const toggleSelect = (id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   };
 
-  // ✅ NEW: Select all / deselect all (only visible/filtered rows)
   const allFilteredSelected =
     filteredRecipients.length > 0 &&
     filteredRecipients.every((r) => selectedIds.has(r.id));
 
   const toggleSelectAll = () => {
     if (allFilteredSelected) {
-      // Deselect all filtered
       setSelectedIds((prev) => {
         const next = new Set(prev);
         filteredRecipients.forEach((r) => next.delete(r.id));
         return next;
       });
     } else {
-      // Select all filtered
       setSelectedIds((prev) => {
         const next = new Set(prev);
         filteredRecipients.forEach((r) => next.add(r.id));
@@ -101,7 +99,7 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
     }
   };
 
-  // ✅ NEW: Delete all selected
+  // Bulk delete selected
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return;
     const count = selectedIds.size;
@@ -112,10 +110,9 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
     setTimeout(() => setDeleteMessage(""), 3000);
   };
 
-  // Delete single recipient (unchanged)
+  // Delete single
   const handleDelete = (recipientId) => {
     const recipient = recipients.find((r) => r.id === recipientId);
-    
     setRecipients((prev) => prev.filter((r) => r.id !== recipientId));
     setFilteredRecipients((prev) => prev.filter((r) => r.id !== recipientId));
     setSelectedIds((prev) => {
@@ -123,12 +120,11 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
       next.delete(recipientId);
       return next;
     });
-    
     setDeleteMessage(`Deleted: ${recipient?.email || "Recipient"}`);
     setTimeout(() => setDeleteMessage(""), 3000);
   };
 
-  // Save remaining recipients (unchanged — same API, same payload)
+  // Save remaining recipients
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -136,27 +132,30 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
 
       const payload = {
         campaignId: Number(campaignId),
-        recipients: recipients.map(r => ({
+        recipients: recipients.map((r) => ({
           id: r.id,
           email: r.email,
-          status: r.status || "pending",
+          status: r.status || "sent",
           accountId: r.accountId,
           sentBodyHtml: r.sentBodyHtml || "",
           sentSubject: r.sentSubject || "",
-          sentFromEmail: r.sentFromEmail || ""
-        }))
+          sentFromEmail: r.sentFromEmail || "",
+        })),
       };
 
       console.log("Saving recipients payload:", payload);
 
-      const response = await fetch(`${API_BASE_URL}/api/campaigns/followup/update-recipients`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      const response = await fetch(
+        `${API_BASE_URL}/api/campaigns/followup/update-recipients`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      );
 
       const data = await response.json();
       console.log("Save response:", data);
@@ -176,88 +175,112 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
   };
 
   return (
-    <div style={backdropStyle}>
-      <div style={modalStyle}>
-        {/* Header */}
-        <div style={headerStyle}>
-          <h3 style={titleStyle}>Update Recipients</h3>
-          <button onClick={onClose} style={closeButtonStyle}>
+    /* ── Backdrop ── */
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      {/* ── Modal Shell ── */}
+      <div className="bg-white rounded-2xl w-[90%] max-w-2xl min-h-[500px] max-h-[90vh] flex flex-col shadow-2xl border-2 border-emerald-200 overflow-hidden">
+
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-6 py-5 border-b-2 border-emerald-100 bg-gradient-to-r from-emerald-50 to-teal-50">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-xl">
+              <Mail className="text-emerald-600" size={20} />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-emerald-700">Update Recipients</h3>
+              <p className="text-xs text-emerald-500 font-medium mt-0.5">
+                Showing only successfully sent emails
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+          >
             <X size={20} />
           </button>
         </div>
 
-        {/* Search Bar */}
-        <div style={searchContainerStyle}>
-          <Search size={18} style={{ color: "#10b981", marginRight: "8px" }} />
-          <input
-            type="text"
-            placeholder="Search recipients by email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={searchInputStyle}
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm("")} style={clearSearchStyle}>
-              <X size={16} />
-            </button>
-          )}
+        {/* ── Search Bar ── */}
+        <div className="px-6 pt-4">
+          <div className="flex items-center gap-2 px-4 py-3 border-2 border-emerald-300 rounded-xl bg-emerald-50/60 focus-within:ring-2 focus-within:ring-emerald-400 transition-all">
+            <Search size={17} className="text-emerald-500 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Search recipients by email..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="flex-1 bg-transparent border-none outline-none text-sm text-slate-800 placeholder-emerald-400 font-medium"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Delete Message */}
+        {/* ── Delete Message Toast ── */}
         {deleteMessage && (
-          <div style={deleteMessageStyle}>
-            <UserX size={16} />
+          <div className="mx-6 mt-3 flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-medium">
+            <UserX size={15} />
             <span>{deleteMessage}</span>
           </div>
         )}
 
-        {/* ✅ NEW: Bulk action bar — shown only when items are selected */}
+        {/* ── Bulk Action Bar ── */}
         {selectedIds.size > 0 && (
-          <div style={bulkBarStyle}>
-            <span style={{ fontSize: "13px", fontWeight: "600", color: "#1d4ed8" }}>
+          <div className="mx-6 mt-3 flex items-center justify-between px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
+            <span className="text-sm font-semibold text-blue-700">
               {selectedIds.size} selected
             </span>
-            <button onClick={handleDeleteSelected} style={bulkDeleteBtnStyle}>
-              <Trash2 size={15} />
+            <button
+              onClick={handleDeleteSelected}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all shadow-sm shadow-red-300"
+            >
+              <Trash2 size={13} />
               Delete Selected ({selectedIds.size})
             </button>
           </div>
         )}
 
-        {/* Recipients Count */}
-        <div style={countStyle}>
-          Showing {filteredRecipients.length} of {recipients.length} recipients
+        {/* ── Count Line ── */}
+        <div className="px-6 pt-3 pb-1 text-xs text-slate-400 font-semibold uppercase tracking-wide">
+          {loading ? "Loading..." : `Showing ${filteredRecipients.length} of ${recipients.length} sent recipients`}
         </div>
 
-        {/* Recipients List */}
+        {/* ── Body ── */}
         {loading ? (
-          <div style={loadingStyle}>
-            <Loader2 size={32} style={{ animation: "spin 1s linear infinite" }} />
-            <p>Loading recipients...</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-400 py-16">
+            <Loader2 size={36} className="animate-spin text-emerald-500" />
+            <p className="text-sm font-medium">Loading recipients...</p>
           </div>
         ) : recipients.length === 0 ? (
-          <div style={emptyStyle}>
-            <UserX size={48} style={{ color: "#9ca3af" }} />
-            <p>No recipients available</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400 py-16">
+            <UserX size={48} className="text-slate-300" />
+            <p className="text-sm font-medium">No sent recipients found</p>
+            <p className="text-xs text-slate-300">Only recipients with "sent" or "completed" status appear here</p>
           </div>
         ) : filteredRecipients.length === 0 ? (
-          <div style={emptyStyle}>
-            <Search size={48} style={{ color: "#9ca3af" }} />
-            <p>No recipients match your search</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400 py-16">
+            <Search size={48} className="text-slate-300" />
+            <p className="text-sm font-medium">No recipients match your search</p>
           </div>
         ) : (
-          <div style={recipientsListStyle}>
-
-            {/* ✅ NEW: Select All header row */}
-            <div style={selectAllRowStyle}>
-              <label style={checkboxLabelStyle}>
+          <div className="flex-1 overflow-y-auto px-6 pb-2 min-h-[200px] max-h-[380px]">
+            {/* Select All Row */}
+            <div className="flex items-center py-3 border-b-2 border-emerald-100 bg-white sticky top-0 z-10">
+              <label className="flex items-center gap-2.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={allFilteredSelected}
                   onChange={toggleSelectAll}
-                  style={checkboxStyle}
+                  className="w-4 h-4 accent-blue-500 cursor-pointer"
                 />
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "#374151" }}>
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">
                   {allFilteredSelected ? "Deselect All" : "Select All"}
                   {filteredRecipients.length !== recipients.length
                     ? ` (${filteredRecipients.length} visible)`
@@ -266,59 +289,90 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
               </label>
             </div>
 
+            {/* Recipient Rows */}
             {filteredRecipients.map((r) => {
               const isSelected = selectedIds.has(r.id);
               return (
                 <div
                   key={r.id}
-                  style={{
-                    ...rowStyle,
-                    backgroundColor: isSelected ? "#eff6ff" : "transparent",
-                    borderLeft: isSelected ? "3px solid #3b82f6" : "3px solid transparent",
-                  }}
+                  className={`flex items-center justify-between py-3.5 px-3 border-b border-emerald-50 rounded-lg transition-all ${
+                    isSelected
+                      ? "bg-blue-50 border-l-4 border-l-blue-400"
+                      : "hover:bg-emerald-50/40 border-l-4 border-l-transparent"
+                  }`}
                 >
-                  {/* ✅ NEW: Per-row checkbox */}
+                  {/* Checkbox */}
                   <input
                     type="checkbox"
                     checked={isSelected}
                     onChange={() => toggleSelect(r.id)}
-                    style={{ ...checkboxStyle, marginRight: "12px", flexShrink: 0 }}
+                    className="w-4 h-4 accent-blue-500 cursor-pointer flex-shrink-0 mr-3"
                   />
 
-                  <div style={emailContainerStyle}>
-                    <span style={emailStyle}>{r.email}</span>
+                  {/* Email + Status */}
+                  <div className="flex flex-col gap-1 flex-1">
+                    <span className="text-sm font-semibold text-slate-800">{r.email}</span>
                     {r.status && (
-                      <span style={statusBadgeStyle(r.status)}>{r.status}</span>
+                      <span
+                        className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded uppercase w-fit tracking-wide ${
+                          r.status === "sent"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : r.status === "completed"
+                            ? "bg-teal-100 text-teal-700"
+                            : r.status === "failed"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-indigo-100 text-indigo-700"
+                        }`}
+                      >
+                        {r.status === "sent" || r.status === "completed" ? (
+                          <span className="flex items-center gap-1">
+                            <CheckCircle2 size={9} />
+                            {r.status}
+                          </span>
+                        ) : (
+                          r.status
+                        )}
+                      </span>
                     )}
                   </div>
 
-                  
+                  {/* Delete Button */}
+                  <button
+                    onClick={() => handleDelete(r.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg ml-3 flex-shrink-0 transition-all shadow-sm shadow-red-200 hover:scale-105"
+                  >
+                    <Trash2 size={13} />
+                    Remove
+                  </button>
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* Footer Actions — unchanged */}
-        <div style={footerStyle}>
-          <button onClick={onClose} style={cancelBtn}>
-            <X size={18} />
+        {/* ── Footer ── */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t-2 border-emerald-100 bg-gradient-to-r from-slate-50 to-emerald-50">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-bold transition-all"
+          >
+            <X size={16} />
             Cancel
           </button>
 
           <button
             onClick={handleSave}
-            style={saveBtn}
             disabled={saving || recipients.length === 0}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:shadow-lg hover:shadow-emerald-500/30 hover:scale-105 text-white text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {saving ? (
               <>
-                <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} />
+                <Loader2 size={16} className="animate-spin" />
                 Saving...
               </>
             ) : (
               <>
-                <Save size={18} />
+                <Save size={16} />
                 Save Recipients ({recipients.length})
               </>
             )}
@@ -328,292 +382,3 @@ export default function ShowsRecipients({ campaignId, onClose, onUpdated }) {
     </div>
   );
 }
-
-/* ---------- Styles ---------- */
-
-const backdropStyle = {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: "rgba(0, 0, 0, 0.6)",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  zIndex: 9999,
-  backdropFilter: "blur(4px)",
-};
-
-const modalStyle = {
-  background: "#fff",
-  padding: "0",
-  borderRadius: "12px",
-  width: "90%",
-  maxWidth: "650px",
-  minHeight: "500px",   // fixed minimum — modal won't shrink with few emails
-  maxHeight: "90vh",    // never overflows viewport
-  display: "flex",
-  flexDirection: "column",
-  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
-};
-
-const headerStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "20px 24px",
-  borderBottom: "2px solid #e5e7eb",
-  background: "linear-gradient(to right, #ecfdf5, #d1fae5)",
-};
-
-const titleStyle = {
-  margin: 0,
-  fontSize: "20px",
-  fontWeight: "700",
-  color: "#059669",
-};
-
-const closeButtonStyle = {
-  background: "transparent",
-  border: "none",
-  cursor: "pointer",
-  padding: "4px",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  color: "#6b7280",
-  transition: "color 0.2s",
-};
-
-const searchContainerStyle = {
-  display: "flex",
-  alignItems: "center",
-  padding: "12px 16px",
-  margin: "16px 24px 0",
-  border: "2px solid #10b981",
-  borderRadius: "8px",
-  backgroundColor: "#f0fdf4",
-  position: "relative",
-};
-
-const searchInputStyle = {
-  flex: 1,
-  border: "none",
-  outline: "none",
-  fontSize: "14px",
-  backgroundColor: "transparent",
-  color: "#111827",
-};
-
-const clearSearchStyle = {
-  background: "transparent",
-  border: "none",
-  cursor: "pointer",
-  padding: "4px",
-  display: "flex",
-  alignItems: "center",
-  color: "#6b7280",
-};
-
-const deleteMessageStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-  margin: "12px 24px 0",
-  padding: "10px 16px",
-  backgroundColor: "#fee2e2",
-  color: "#991b1b",
-  borderRadius: "6px",
-  fontSize: "14px",
-  fontWeight: "500",
-};
-
-// ✅ NEW styles
-const bulkBarStyle = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  margin: "10px 24px 0",
-  padding: "10px 16px",
-  backgroundColor: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  borderRadius: "8px",
-};
-
-const bulkDeleteBtnStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "6px",
-  background: "#ef4444",
-  color: "#fff",
-  border: "none",
-  padding: "7px 14px",
-  borderRadius: "6px",
-  cursor: "pointer",
-  fontSize: "13px",
-  fontWeight: "600",
-  boxShadow: "0 2px 4px rgba(239, 68, 68, 0.25)",
-};
-
-const selectAllRowStyle = {
-  display: "flex",
-  alignItems: "center",
-  padding: "10px 16px",
-  borderBottom: "2px solid #e5e7eb",
-  backgroundColor: "#f9fafb",
-};
-
-const checkboxLabelStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "10px",
-  cursor: "pointer",
-  userSelect: "none",
-};
-
-const checkboxStyle = {
-  width: "16px",
-  height: "16px",
-  accentColor: "#3b82f6",
-  cursor: "pointer",
-};
-
-const countStyle = {
-  padding: "8px 24px",
-  fontSize: "13px",
-  color: "#6b7280",
-  fontWeight: "500",
-};
-
-const recipientsListStyle = {
-  flex: 1,
-  overflowY: "auto",
-  minHeight: "200px",   // always shows at least a few rows
-  maxHeight: "380px",   // scroll kicks in beyond this — list never grows modal height
-  padding: "0 24px",
-  marginBottom: "16px",
-};
-
-const rowStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "14px 16px",
-  borderBottom: "1px solid #e5e7eb",
-  transition: "background-color 0.2s",
-  borderRadius: "4px",
-};
-
-const emailContainerStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "4px",
-  flex: 1,
-};
-
-const emailStyle = {
-  fontSize: "14px",
-  color: "#111827",
-  fontWeight: "500",
-};
-
-const statusBadgeStyle = (status) => ({
-  display: "inline-block",
-  padding: "2px 8px",
-  fontSize: "11px",
-  fontWeight: "600",
-  borderRadius: "4px",
-  textTransform: "uppercase",
-  backgroundColor:
-    status === "sent" ? "#dcfce7" : status === "failed" ? "#fee2e2" : "#e0e7ff",
-  color:
-    status === "sent" ? "#166534" : status === "failed" ? "#991b1b" : "#4338ca",
-  width: "fit-content",
-});
-
-const deleteBtn = {
-  display: "flex",
-  alignItems: "center",
-  gap: "6px",
-  background: "#ef4444",
-  color: "#fff",
-  border: "none",
-  padding: "8px 14px",
-  borderRadius: "6px",
-  cursor: "pointer",
-  fontSize: "13px",
-  fontWeight: "600",
-  transition: "all 0.2s",
-  boxShadow: "0 2px 4px rgba(239, 68, 68, 0.2)",
-};
-
-const footerStyle = {
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: "12px",
-  padding: "16px 24px",
-  borderTop: "2px solid #e5e7eb",
-  background: "#f9fafb",
-};
-
-const cancelBtn = {
-  display: "flex",
-  alignItems: "center",
-  gap: "6px",
-  background: "#6b7280",
-  color: "#fff",
-  border: "none",
-  padding: "10px 20px",
-  borderRadius: "8px",
-  cursor: "pointer",
-  fontSize: "14px",
-  fontWeight: "600",
-  transition: "all 0.2s",
-};
-
-const saveBtn = {
-  display: "flex",
-  alignItems: "center",
-  gap: "6px",
-  background: "linear-gradient(to right, #10b981, #059669)",
-  color: "#fff",
-  border: "none",
-  padding: "10px 20px",
-  borderRadius: "8px",
-  cursor: "pointer",
-  fontSize: "14px",
-  fontWeight: "600",
-  transition: "all 0.2s",
-  boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
-};
-
-const loadingStyle = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "60px 20px",
-  gap: "16px",
-  color: "#6b7280",
-};
-
-const emptyStyle = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "60px 20px",
-  gap: "12px",
-  color: "#6b7280",
-};
-
-// Add keyframes for spin animation
-const style = document.createElement("style");
-style.innerHTML = `
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-`;
-document.head.appendChild(style);
