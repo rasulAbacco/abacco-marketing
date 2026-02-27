@@ -704,14 +704,19 @@ async function updateCampaignStatus(campaignId) {
 
   let finalStatus = "completed";
 
+  // If still sending
   if (counts.pending > 0) {
     finalStatus = "sending";
   }
+
+  // If ALL emails failed
   else if (counts.sent === 0 && counts.failed > 0) {
     finalStatus = "failed";
   }
-  else if (counts.sent > 0 && counts.failed > 0) {
-    finalStatus = "completed_with_errors";
+
+  // If at least 1 email sent successfully
+  else {
+    finalStatus = "completed";
   }
 
   const campaign = await prisma.campaign.findUnique({
@@ -729,14 +734,14 @@ async function updateCampaignStatus(campaignId) {
     ranges.forEach(range => {
       cache.del(`dashboard:${campaign.userId}:${range}`);
     });
-    
+
     const keys = cache.keys();
     keys.forEach(key => {
       if (key.startsWith(`dashboard:${campaign.userId}:`)) {
         cache.del(key);
       }
     });
-    
+
     console.log(`🔥 Cache invalidated for user ${campaign.userId}`);
   }
 

@@ -291,6 +291,8 @@ model Campaign {
   lastSentAt      DateTime?
   customLimits    String?
 
+  error String?
+
   // 🔹 Relation
   recipients CampaignRecipient[]
   user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)

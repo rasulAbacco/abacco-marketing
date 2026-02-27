@@ -340,7 +340,7 @@ export default function CreateCampaign() {
           fromAccountIds: selectedFroms,
           pitchIds: selectedPitchIds,
           sendType: campaignType,
-          scheduledAt: campaignType === "scheduled" ? `${scheduleDate}T${scheduleTime}` : null,
+          scheduledAt: campaignType === "scheduled" ? new Date(`${scheduleDate}T${scheduleTime}`).toISOString() : null,
           customLimits: customLimits,
           senderRole, 
         }),

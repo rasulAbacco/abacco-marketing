@@ -61,23 +61,68 @@ app.get("/api/health", (req, res) => {
 // --------------------
 async function resumeSendingCampaigns() {
   try {
+    console.log("🔄 Checking for interrupted campaigns...");
+
+    // Find campaigns that were mid-send
     const campaigns = await prisma.campaign.findMany({
-      where: { status: "sending" }
+      where: { status: "sending" },
+      select: { id: true }
     });
 
     if (!campaigns.length) {
-      console.log("✅ No interrupted campaigns to resume");
+      console.log("✅ No interrupted campaigns found");
       return;
     }
 
-    console.log(`🔄 Found ${campaigns.length} campaign(s) to resume`);
+    console.log(`🔎 Found ${campaigns.length} campaign(s) in 'sending' state`);
 
     for (const campaign of campaigns) {
-      console.log("🔄 Resuming campaign:", campaign.id);
 
-      // Fire-and-forget resume
+      // Count pending emails only
+      const pendingCount = await prisma.campaignRecipient.count({
+        where: {
+          campaignId: campaign.id,
+          status: "pending"
+        }
+      });
+
+      if (pendingCount === 0) {
+        console.log(`⚠️ Campaign ${campaign.id} has no pending emails. Fixing status...`);
+
+        // Double check final status
+        const sentCount = await prisma.campaignRecipient.count({
+          where: { campaignId: campaign.id, status: "sent" }
+        });
+
+        const failedCount = await prisma.campaignRecipient.count({
+          where: { campaignId: campaign.id, status: "failed" }
+        });
+
+        let finalStatus = "completed";
+
+        if (sentCount === 0 && failedCount > 0) {
+          finalStatus = "failed";
+        }
+
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: { status: finalStatus }
+        });
+
+        console.log(`✅ Campaign ${campaign.id} updated to ${finalStatus}`);
+        continue;
+      }
+
+      console.log(
+        `🚀 Resuming campaign ${campaign.id} with ${pendingCount} pending emails`
+      );
+
+      // Resume only remaining pending emails
       sendBulkCampaign(campaign.id).catch((err) => {
-        console.error(`❌ Resume error for campaign ${campaign.id}:`, err);
+        console.error(
+          `❌ Resume error for campaign ${campaign.id}:`,
+          err.message
+        );
       });
     }
 
@@ -85,7 +130,6 @@ async function resumeSendingCampaigns() {
     console.error("❌ Error while resuming campaigns:", error);
   }
 }
-
 // --------------------
 // Start server
 // --------------------
