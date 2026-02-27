@@ -975,16 +975,21 @@ export const getCampaignsForFollowup = async (req, res) => {
     );
 
     // Filter campaigns
-    const now = Date.now();
-    const hours24 = 24 * 60 * 60 * 1000;
+    // const now = Date.now();
+    // const hours24 = 24 * 60 * 60 * 1000;
 
-    const availableCampaigns = allCampaigns.filter(c => {
-      const completedTime = new Date(c.createdAt).getTime();
+    // const availableCampaigns = allCampaigns.filter(c => {
+    //   const completedTime = new Date(c.createdAt).getTime();
       
-      return (
-        now - completedTime >= hours24 &&
-        !campaignsWithFollowups.has(c.id)
-      );
+    //   return (
+    //     now - completedTime >= hours24 &&
+    //     !campaignsWithFollowups.has(c.id)
+    //   );
+    // });
+
+    // Filter campaigns - show immediately after completion, no waiting period
+    const availableCampaigns = allCampaigns.filter(c => {
+      return !campaignsWithFollowups.has(c.id);
     });
 
     return res.json({

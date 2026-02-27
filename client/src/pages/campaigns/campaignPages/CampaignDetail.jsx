@@ -93,16 +93,26 @@ export default function CampaignDetail() {
         // 3. Are NOT parent campaigns (don't have parentCampaignId)
         // 4. Are at least 24 hours old
         // 5. DON'T already have a completed follow-up
-        const filtered = allCampaigns.filter(c => {
-          const completedTime = new Date(c.createdAt).getTime();
-          const now = Date.now();
-          const hours24 = 24 * 60 * 60 * 1000;
+        // const filtered = allCampaigns.filter(c => {
+        //   const completedTime = new Date(c.createdAt).getTime();
+        //   const now = Date.now();
+        //   const hours24 = 24 * 60 * 60 * 1000;
 
+        //   return (
+        //     (c.sendType === "immediate" || c.sendType === "scheduled") &&
+        //     c.status === "completed" &&
+        //     !c.parentCampaignId &&
+        //     now - completedTime >= hours24 &&
+        //     !campaignsWithFollowups.has(c.id)
+        //   );
+        // });
+
+        // ✅ No 24hr wait — show completed campaigns immediately
+        const filtered = allCampaigns.filter(c => {
           return (
             (c.sendType === "immediate" || c.sendType === "scheduled") &&
             c.status === "completed" &&
             !c.parentCampaignId &&
-            now - completedTime >= hours24 &&
             !campaignsWithFollowups.has(c.id)
           );
         });
@@ -250,13 +260,15 @@ export default function CampaignDetail() {
       }
 
       // Build senderRecipientMap - distribute ONLY completed (sent) recipients across sender accounts
+     // ✅ CORRECT - keep each recipient with the account that originally sent to them
       const recipients = (loadedCampaign.recipients || []).filter(
         r => r.status === "sent" || r.status === "completed"
       );
       const senderRecipientMap = {};
-      
-      recipients.forEach((recipient, index) => {
-        const accountId = fromAccountIds[index % fromAccountIds.length];
+
+      recipients.forEach((recipient) => {
+        const accountId = recipient.accountId;  // ✅ use original sender account
+        if (!accountId) return;
         if (!senderRecipientMap[accountId]) {
           senderRecipientMap[accountId] = [];
         }
