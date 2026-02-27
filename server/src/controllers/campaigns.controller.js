@@ -957,11 +957,12 @@ export const getCampaignsForFollowup = async (req, res) => {
     });
 
     // Get all completed follow-up campaigns with their parent IDs
-    const followupCampaigns = await prisma.campaign.findMany({
+    // Only block parent campaigns whose follow-up is still active (not completed)
+    const activeFollowups = await prisma.campaign.findMany({
       where: {
         userId: req.user.id,
         sendType: "followup",
-        status: "completed",
+        status: { in: ["draft", "sending", "scheduled"] },
         parentCampaignId: { not: null }
       },
       select: {
@@ -969,27 +970,35 @@ export const getCampaignsForFollowup = async (req, res) => {
       }
     });
 
-    // Create a set of campaign IDs that already have follow-ups
-    const campaignsWithFollowups = new Set(
-      followupCampaigns.map(f => f.parentCampaignId)
+    const campaignsWithActiveFollowups = new Set(
+      activeFollowups.map(f => f.parentCampaignId)
     );
 
-    // Filter campaigns
-    // const now = Date.now();
-    // const hours24 = 24 * 60 * 60 * 1000;
+    // Count completed follow-ups per parent campaign
+    const completedFollowups = await prisma.campaign.findMany({
+      where: {
+        userId: req.user.id,
+        sendType: "followup",
+        status: "completed",
+        parentCampaignId: { not: null }
+      },
+      select: { parentCampaignId: true }
+    });
 
-    // const availableCampaigns = allCampaigns.filter(c => {
-    //   const completedTime = new Date(c.createdAt).getTime();
-      
-    //   return (
-    //     now - completedTime >= hours24 &&
-    //     !campaignsWithFollowups.has(c.id)
-    //   );
-    // });
+    const followupCountMap = {};
+    completedFollowups.forEach(f => {
+      followupCountMap[f.parentCampaignId] =
+        (followupCountMap[f.parentCampaignId] || 0) + 1;
+    });
 
-    // Filter campaigns - show immediately after completion, no waiting period
+    // Only show campaigns that:
+    // 1. Don't have an active (in-progress) follow-up
+    // 2. Have fewer than 2 completed follow-ups (max 2 allowed)
     const availableCampaigns = allCampaigns.filter(c => {
-      return !campaignsWithFollowups.has(c.id);
+      return (
+        !campaignsWithActiveFollowups.has(c.id) &&
+        (followupCountMap[c.id] || 0) < 2  // ✅ hide after 2nd followup done
+      );
     });
 
     return res.json({
@@ -1210,4 +1219,64 @@ export const sendFollowupCampaign = async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false });
   }
+};
+
+
+export const startFollowupCleanupJob = () => {
+  const ONE_HOUR = 60 * 60 * 1000;
+  const ONE_DAY = 24 * ONE_HOUR;
+
+  setInterval(async () => {
+    try {
+      const oneDayAgo = new Date(Date.now() - ONE_DAY);
+
+      // Find all completed followup campaigns
+      const allFollowups = await prisma.campaign.findMany({
+        where: {
+          sendType: "followup",
+          status: "completed",
+          parentCampaignId: { not: null },
+          updatedAt: { lte: oneDayAgo }  // completed more than 1 day ago
+        },
+        select: {
+          id: true,
+          parentCampaignId: true,
+          userId: true
+        }
+      });
+
+      // Count follow-ups per parent — delete only 2nd follow-up campaigns
+      const countPerParent = {};
+      allFollowups.forEach(f => {
+        countPerParent[f.parentCampaignId] = 
+          (countPerParent[f.parentCampaignId] || 0) + 1;
+      });
+
+      const toDelete = allFollowups.filter(f => 
+        countPerParent[f.parentCampaignId] >= 2
+      );
+
+      for (const campaign of toDelete) {
+        // Delete recipients first
+        await prisma.campaignRecipient.deleteMany({
+          where: { campaignId: campaign.id }
+        });
+
+        // Delete the campaign
+        await prisma.campaign.delete({
+          where: { id: campaign.id }
+        });
+
+        // Invalidate cache
+        invalidateDashboardCache(campaign.userId);
+
+        console.log(`🗑️ Auto-deleted 2nd followup campaign ${campaign.id} after 1 day`);
+      }
+
+    } catch (err) {
+      console.error("Followup cleanup job error:", err);
+    }
+  }, ONE_HOUR); // runs every hour
+
+  console.log("✅ Follow-up cleanup job started");
 };

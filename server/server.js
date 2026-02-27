@@ -15,6 +15,7 @@ import leadsRoutes from "./src/routes/leads.routes.js";
 import { startCampaignScheduler } from "./src/utils/campaignScheduler.js";
 import analyticsRoutes from "./src/routes/analytics.routes.js";
 import { sendBulkCampaign } from "./src/services/campaignMailer.service.js";
+import { startFollowupCleanupJob } from "./src/controllers/campaigns.controller.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -130,6 +131,7 @@ async function resumeSendingCampaigns() {
     console.error("❌ Error while resuming campaigns:", error);
   }
 }
+
 // --------------------
 // Start server
 // --------------------
@@ -144,3 +146,6 @@ app.listen(PORT, async () => {
   // 🔥 IMPORTANT: Resume campaigns that were interrupted
   await resumeSendingCampaigns();
 });
+
+
+startFollowupCleanupJob();

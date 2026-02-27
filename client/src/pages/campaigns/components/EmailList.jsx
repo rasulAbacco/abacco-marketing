@@ -1,6 +1,6 @@
 // ✅ EmailList.jsx - FIXED VERSION
 import React, { useState, useEffect, useRef } from "react";
-import { Mail, ChevronDown, ChevronUp, Users, Globe, Zap, MoreVertical, Trash2, Check, X } from "lucide-react";
+import { Mail, ChevronDown, ChevronUp, Users, Globe, Zap, MoreVertical, Trash2, Check, X, Flag } from "lucide-react";
 import { api } from "../../utils/api"; 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -27,6 +27,13 @@ export default function ConversationList({
   const [selectAll, setSelectAll] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState({});
+  const [flaggedConversations, setFlaggedConversations] = useState(() => {
+    try {
+      const stored = localStorage.getItem("flaggedConversations");
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
+  const [hoveredConversation, setHoveredConversation] = useState(null);
   const moreMenuRef = useRef(null);
 
   // Close dropdown when clicking outside
@@ -317,6 +324,15 @@ export default function ConversationList({
     }));
   };
 
+  const toggleFlag = (e, conversationId) => {
+    e.stopPropagation();
+    setFlaggedConversations((prev) => {
+      const updated = { ...prev, [conversationId]: !prev[conversationId] };
+      try { localStorage.setItem("flaggedConversations", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
   const formatDate = (dateStr) => {
     const date = new Date(dateStr);
     const now = new Date();
@@ -528,13 +544,19 @@ export default function ConversationList({
                 const clientEmail = conversation.displayName?.trim() ? conversation.displayName : conversation.displayEmail || "Unknown";
                 const hasMultipleParticipants = false;
                 const isChecked = selectedConversations.some((c) => c.conversationId === conversation.conversationId);
+                const isFlagged = !!flaggedConversations[conversationId];
+                const isHovered = hoveredConversation === conversationId;
 
                 return (
                   <div
                     key={conversationId}
                     onClick={() => handleConversationSelect(conversation)}
-                    className={`px-4 py-3 border-b border-emerald-100/50 cursor-pointer transition-all ${
-                      isSelected
+                    onMouseEnter={() => setHoveredConversation(conversationId)}
+                    onMouseLeave={() => setHoveredConversation(null)}
+                    className={`px-4 py-3 border-b border-emerald-100/50 cursor-pointer transition-all relative ${
+                      isFlagged
+                        ? "bg-yellow-50 border-l-4 border-yellow-400"
+                        : isSelected
                         ? "bg-gradient-to-r from-emerald-50 to-teal-50 border-l-4 border-emerald-600 shadow-sm"
                         : "hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-teal-50/50"
                     }`}
@@ -580,9 +602,25 @@ export default function ConversationList({
                               <span className="flex-shrink-0 w-2 h-2 bg-emerald-600 rounded-full shadow-sm"></span>
                             )}
                           </div>
-                          <span className="text-xs text-slate-500 flex-shrink-0 ml-2 font-medium">
-                            {formatDate(conversation.lastDate)}
-                          </span>
+                          <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                            {/* Flag button - shows on hover or when flagged */}
+                            <button
+                              onClick={(e) => toggleFlag(e, conversationId)}
+                              title={isFlagged ? "Remove flag" : "Flag this conversation"}
+                              className={`transition-all duration-150 rounded p-0.5 ${
+                                isFlagged
+                                  ? "opacity-100 text-red-500 hover:text-red-700"
+                                  : isHovered
+                                  ? "opacity-100 text-slate-400 hover:text-red-400"
+                                  : "opacity-0 pointer-events-none"
+                              }`}
+                            >
+                              <Flag className="w-3.5 h-3.5" fill={isFlagged ? "currentColor" : "none"} />
+                            </button>
+                            <span className="text-xs text-slate-500 font-medium">
+                              {formatDate(conversation.lastDate)}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="flex items-start justify-between gap-2">

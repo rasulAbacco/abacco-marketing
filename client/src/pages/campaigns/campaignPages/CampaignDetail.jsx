@@ -61,12 +61,14 @@ export default function CampaignDetail() {
   const [modal, setModal] = useState({ open: false, type: "", message: "" });
   const [showRecipientModal, setShowRecipientModal] = useState(false);
   const [campaignData, setCampaignData] = useState(null);
+  const [show2ndFollowup, setShow2ndFollowup] = useState(false);
   const { id } = useParams();
+
 
   // ------------------------------
   // Fetch campaigns
   // ------------------------------
-  const fetchCampaigns = () => {
+  const fetchCampaigns = (isSecondFollowup = false) => {
     fetch(`${API_BASE_URL}/api/campaigns`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -75,47 +77,48 @@ export default function CampaignDetail() {
       .then((res) => res.json())
       .then((data) => {
         console.log("Campaign API:", data);
-        
+
         const allCampaigns = data.data || [];
-        
-        // Get IDs of campaigns that have completed follow-ups
-        const campaignsWithFollowups = new Set();
-        
+
+        // Block campaigns with an active (in-progress) follow-up
+        const campaignsWithActiveFollowups = new Set();
+
+        // Count completed follow-ups per parent
+        const followupCountMap = {};
+
         allCampaigns.forEach(c => {
-          if (c.sendType === "followup" && c.status === "completed" && c.parentCampaignId) {
-            campaignsWithFollowups.add(c.parentCampaignId);
+          if (c.sendType === "followup" && c.parentCampaignId) {
+            if (c.status === "draft" || c.status === "sending" || c.status === "scheduled") {
+              campaignsWithActiveFollowups.add(c.parentCampaignId);
+            }
+            if (c.status === "completed") {
+              followupCountMap[c.parentCampaignId] =
+                (followupCountMap[c.parentCampaignId] || 0) + 1;
+            }
           }
         });
-        
-        // Filter campaigns that:
-        // 1. Are immediate or scheduled
-        // 2. Are completed
-        // 3. Are NOT parent campaigns (don't have parentCampaignId)
-        // 4. Are at least 24 hours old
-        // 5. DON'T already have a completed follow-up
-        // const filtered = allCampaigns.filter(c => {
-        //   const completedTime = new Date(c.createdAt).getTime();
-        //   const now = Date.now();
-        //   const hours24 = 24 * 60 * 60 * 1000;
 
-        //   return (
-        //     (c.sendType === "immediate" || c.sendType === "scheduled") &&
-        //     c.status === "completed" &&
-        //     !c.parentCampaignId &&
-        //     now - completedTime >= hours24 &&
-        //     !campaignsWithFollowups.has(c.id)
-        //   );
-        // });
+        const filtered = allCampaigns
+          .filter(c => {
+            const completedCount = followupCountMap[c.id] || 0;
+            const isBase =
+              (c.sendType === "immediate" || c.sendType === "scheduled") &&
+              c.status === "completed" &&
+              !c.parentCampaignId &&
+              !campaignsWithActiveFollowups.has(c.id);
 
-        // ✅ No 24hr wait — show completed campaigns immediately
-        const filtered = allCampaigns.filter(c => {
-          return (
-            (c.sendType === "immediate" || c.sendType === "scheduled") &&
-            c.status === "completed" &&
-            !c.parentCampaignId &&
-            !campaignsWithFollowups.has(c.id)
-          );
-        });
+            if (!isBase) return false;
+
+            if (isSecondFollowup) {
+              return completedCount === 1;
+            } else {
+              return completedCount === 0;
+            }
+          })
+          .map(c => ({
+            ...c,
+            followupNumber: (followupCountMap[c.id] || 0) + 1
+          }));
 
         setCampaigns(filtered);
       })
@@ -123,8 +126,9 @@ export default function CampaignDetail() {
   };
 
   useEffect(() => {
-    fetchCampaigns();
-  }, []);
+    fetchCampaigns(show2ndFollowup);
+  }, [show2ndFollowup]);
+
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/accounts`, {
@@ -399,11 +403,29 @@ export default function CampaignDetail() {
             {/* Campaign Selection */}
             <Card>
               <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-xl">
-                    <Target className="text-emerald-600" size={20} />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-xl">
+                      <Target className="text-emerald-600" size={20} />
+                    </div>
+                    <CardTitle>Select Campaign</CardTitle>
                   </div>
-                  <CardTitle>Select Campaign</CardTitle>
+
+                  {/* 2nd Follow-up Toggle Button */}
+                  <button
+                    onClick={() => {
+                      setShow2ndFollowup(prev => !prev);
+                      setSelectedCampaignId("");
+                      setLoadedCampaign(null);
+                    }}
+                    className={`px-4 py-2 text-xs font-bold rounded-xl border-2 transition-all transform hover:scale-105 ${
+                      show2ndFollowup
+                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-600 shadow-lg shadow-emerald-500/30"
+                        : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    }`}
+                  >
+                    2nd Follow-up
+                  </button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -415,9 +437,10 @@ export default function CampaignDetail() {
                   <option value="">-- Choose a campaign --</option>
                   {campaigns.map((c) => {
                     const completedCount = c.recipients?.filter(r => r.status === "sent" || r.status === "completed").length || 0;
+                    const ordinal = c.followupNumber === 2 ? "2nd" : "1st";
                     return (
                       <option key={c.id} value={c.id}>
-                        {c.name} ({completedCount} recipients)
+                        {c.name} — {ordinal} Follow-up ({completedCount} recipients)
                       </option>
                     );
                   })}
