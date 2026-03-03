@@ -35,8 +35,7 @@ function buildFollowupHtml({
   baseColor
 }) {
   return `
-    <div style="color:${baseColor}; font-family: Calibri, sans-serif;">
-
+<div style="color:${baseColor || '#000000'}; font-family: Calibri, sans-serif;">
       <!-- Follow-up message -->
       <div>
         ${followUpBody}
@@ -396,7 +395,8 @@ export async function sendBulkCampaign(campaignId) {
               from: originalFrom,
               to: r.email,
               sentAt: sentAt,
-              subject: originalSubject
+              subject: originalSubject,
+              baseColor: baseStyles.color   // ✅ ADD THIS
             });
 
             const html = `<!DOCTYPE html>
