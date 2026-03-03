@@ -93,11 +93,14 @@ function buildSignature(account, senderRole, baseStyles = {}) {
       font-family:${safeStyles.fontFamily};
       font-size:${safeStyles.fontSize};
       line-height:1.6;
-      color:${safeStyles.color};
-      font-weight:bold;
     ">
-      Regards,<br/>
-      ${name} - ${role}
+      <span style="color:${safeStyles.color}; font-weight:bold;">
+        Regards,
+      </span>
+      <br/>
+      <span style="color:${safeStyles.color}; font-weight:bold;">
+        ${name} - ${role}
+      </span>
     </div>
   `;
 }
