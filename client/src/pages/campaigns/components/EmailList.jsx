@@ -22,7 +22,13 @@ export default function ConversationList({
 }) {
   const [sortBy, setSortBy] = useState("sender");
   const [sortOrder, setSortOrder] = useState("desc");
+
+  // ✅ FIX: Separate initial loading from background refresh
+  // `loading` = true only on first load (shows spinner)
+  // `refreshing` = true on background polls (silent, no UI flash)
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [selectAll, setSelectAll] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -36,6 +42,9 @@ export default function ConversationList({
   const [hoveredConversation, setHoveredConversation] = useState(null);
   const moreMenuRef = useRef(null);
 
+  // Track whether we've done an initial fetch for the current account+folder
+  const lastFetchKey = useRef(null);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -48,13 +57,19 @@ export default function ConversationList({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const fetchEmails = async () => {
+  const fetchEmails = async (isBackground = false) => {
     if (!selectedAccount?.id) {
       console.warn("No account ID available");
       return;
     }
 
-    setLoading(true);
+    // ✅ Only show spinner on initial/manual fetch, not background polls
+    if (!isBackground) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
     try {
       const res = await api.get(
         `${API_BASE_URL}/api/inbox/conversations/${selectedAccount.id}`,
@@ -68,20 +83,31 @@ export default function ConversationList({
       setConversations(res.data.data || []);
     } catch (err) {
       console.error("Failed to fetch emails", err);
-      setConversations([]);
+      // On background refresh errors, keep existing data — don't wipe list
+      if (!isBackground) {
+        setConversations([]);
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
     if (!selectedAccount?.id || !selectedFolder) return;
 
-    fetchEmails();
+    const fetchKey = `${selectedAccount.id}:${selectedFolder}:${refreshKey}`;
+    const isInitial = lastFetchKey.current !== `${selectedAccount.id}:${selectedFolder}`;
+    lastFetchKey.current = `${selectedAccount.id}:${selectedFolder}`;
 
+    // Show spinner only on account/folder change or manual refresh (refreshKey changed)
+    fetchEmails(!isInitial);
+
+    // ✅ FIX: Poll every 20s (matches server cache TTL of 15s) so new emails
+    // appear within one poll cycle after the background sync completes.
     const interval = setInterval(() => {
-      fetchEmails();
-    }, 60000);
+      fetchEmails(true); // background = silent, no spinner
+    }, 20000);
 
     return () => clearInterval(interval);
   }, [refreshKey, selectedAccount?.id, selectedFolder]);
@@ -90,7 +116,8 @@ export default function ConversationList({
     console.log(`📊 EmailList rendered with ${conversations.length} conversations`);
   }, [conversations]);
 
-  if (loading) return <p className="p-4 text-center text-green-700 mt-20">Refreshing inbox...</p>;
+  // ✅ FIX: Only block render on initial load, not background polls
+  if (loading) return <p className="p-4 text-center text-green-700 mt-20">Loading Mails...</p>;
 
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -136,7 +163,6 @@ export default function ConversationList({
         newSelected = [...prev, conversation];
       }
       
-      // Update selectAll based on whether all conversations are selected
       if (newSelected.length === conversations.length) {
         setSelectAll(true);
       } else {
@@ -149,23 +175,19 @@ export default function ConversationList({
 
   const handleSelectAll = () => {
     if (selectionMode) {
-      // Exit selection mode and clear selections
       setSelectedConversations([]);
       setSelectAll(false);
       setSelectionMode(false);
     } else {
-      // Enter selection mode but don't auto-select
       setSelectionMode(true);
     }
   };
 
   const handleTopCheckboxChange = () => {
     if (selectAll) {
-      // Deselect all
       setSelectedConversations([]);
       setSelectAll(false);
     } else {
-      // Select all
       setSelectedConversations([...conversations]);
       setSelectAll(true);
     }
@@ -177,7 +199,6 @@ export default function ConversationList({
     if (!confirm(`Delete ${selectedConversations.length} conversation(s)?`)) return;
 
     try {
-      // ✅ BATCH DELETE - all at once instead of loop
       const conversationIds = selectedConversations.map(c => c.conversationId);
       
       await api.patch(`${API_BASE_URL}/api/inbox/batch-hide-conversations`, {
@@ -193,7 +214,6 @@ export default function ConversationList({
       setSelectionMode(false);
       setShowMoreMenu(false);
       
-      // ✅ Trigger unread count refresh
       if (onUnreadChange) {
         onUnreadChange();
       }
@@ -209,7 +229,6 @@ export default function ConversationList({
     if (!confirm(`Delete all ${conversations.length} conversations?`)) return;
 
     try {
-      // ✅ BATCH DELETE ALL
       const conversationIds = conversations.map(c => c.conversationId);
       
       await api.patch(`${API_BASE_URL}/api/inbox/batch-hide-conversations`, {
@@ -223,7 +242,6 @@ export default function ConversationList({
       setSelectionMode(false);
       setShowMoreMenu(false);
       
-      // ✅ Trigger unread count refresh
       if (onUnreadChange) {
         onUnreadChange();
       }
@@ -233,20 +251,17 @@ export default function ConversationList({
     }
   };
 
-  // ✅ OPTIMIZED: Batch mark as read
   const handleMarkAsRead = async () => {
     if (selectedConversations.length === 0) return;
 
     try {
       const conversationIds = selectedConversations.map(c => c.conversationId);
       
-      // ✅ Use batch endpoint
       await api.patch(`${API_BASE_URL}/api/inbox/batch-mark-read`, {
         conversationIds,
         accountId: selectedAccount.id,
       });
 
-      // Update local state
       setConversations((prev) =>
         prev.map((conv) => {
           if (selectedConversations.some((sc) => sc.conversationId === conv.conversationId)) {
@@ -261,7 +276,6 @@ export default function ConversationList({
       setSelectionMode(false);
       setShowMoreMenu(false);
       
-      // ✅ CRITICAL: Trigger unread count refresh in sidebar
       if (onUnreadChange) {
         onUnreadChange();
       }
@@ -271,20 +285,17 @@ export default function ConversationList({
     }
   };
 
-  // ✅ OPTIMIZED: Batch mark as unread
   const handleMarkAsUnread = async () => {
     if (selectedConversations.length === 0) return;
 
     try {
       const conversationIds = selectedConversations.map(c => c.conversationId);
       
-      // ✅ Use batch endpoint
       await api.patch(`${API_BASE_URL}/api/inbox/batch-mark-unread`, {
         conversationIds,
         accountId: selectedAccount.id,
       });
 
-      // Update local state
       setConversations((prev) =>
         prev.map((conv) => {
           if (selectedConversations.some((sc) => sc.conversationId === conv.conversationId)) {
@@ -299,7 +310,6 @@ export default function ConversationList({
       setSelectionMode(false);
       setShowMoreMenu(false);
       
-      // ✅ CRITICAL: Trigger unread count refresh in sidebar
       if (onUnreadChange) {
         onUnreadChange();
       }
@@ -408,9 +418,17 @@ export default function ConversationList({
       {/* Header */}
       <div className="p-2 border-b border-emerald-200/50 bg-gradient-to-r from-white to-emerald-50/30">
         <div className="flex items-center justify-between ">
-          <h2 className="text-md font-bold bg-gradient-to-r from-emerald-600 to-green-800 bg-clip-text text-transparent">
-          {conversations.length} {conversations.length === 1 ? "conversation" : "conversations"}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-md font-bold bg-gradient-to-r from-emerald-600 to-green-800 bg-clip-text text-transparent">
+              {conversations.length} {conversations.length === 1 ? "conversation" : "conversations"}
+            </h2>
+            {/* ✅ Subtle background refresh indicator — no spinner blocking the list */}
+            {refreshing && (
+              <span className="text-[10px] text-emerald-500 animate-pulse font-medium">
+                ● syncing
+              </span>
+            )}
+          </div>
 
           {/* More Menu - Top Right */}
           <div className="relative" ref={moreMenuRef}>
@@ -487,8 +505,6 @@ export default function ConversationList({
 
         {/* Sorting and Select All */}
         <div className="flex items-center justify-between gap-2">
-          
-
           {selectionMode && (
             <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
               <input

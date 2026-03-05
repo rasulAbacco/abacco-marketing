@@ -377,9 +377,22 @@ export async function sendBulkCampaign(campaignId) {
             const signature = buildSignature(account, campaign.senderRole, baseStyles);
             const followupWithSignature = followupBody + signature;
 
-            let originalBodyHtml = r.sentBodyHtml || "";
-            const originalSubject = r.sentSubject || subjects[0];
-            const originalFrom = r.sentFromEmail || account.email;
+            const originalRecipient = await prisma.campaignRecipient.findFirst({
+              where: {
+                campaignId: campaign.parentCampaignId,
+                email: r.email,
+                status: "sent"
+              }
+            });
+
+            if (!originalRecipient || !originalRecipient.sentBodyHtml) {
+              // console.log("⚠️ Original mail not found for:", r.email);
+              continue; // skip this recipient
+            }
+
+            let originalBodyHtml = originalRecipient.sentBodyHtml;
+            const originalSubject = originalRecipient.sentSubject;
+            const originalFrom = originalRecipient.sentFromEmail;
 
             const originalDate = r.sentAt ? new Date(r.sentAt) : new Date();
             const sentAt = originalDate.toLocaleString("en-US", {

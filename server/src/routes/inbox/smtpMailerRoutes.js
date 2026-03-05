@@ -1,15 +1,13 @@
 // server/src/routes/inbox/smtpMailerRoutes.js
 import express from "express";
 import nodemailer from "nodemailer";
-import { PrismaClient } from "@prisma/client";
 import multer from "multer";
-import crypto from "crypto"; // 👈 ADDED THIS IMPORT
+import crypto from "crypto";
 import { decrypt } from "../../utils/crypto.js";
 import cache from "../../utils/cache.js";
-
+import prisma from "../../prismaClient.js"; // ✅ shared singleton — no extra connection pool
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Configure Multer (Memory Storage)
 const upload = multer({
@@ -282,5 +280,3 @@ router.post("/send", upload.array("attachments"), async (req, res) => {
 });
 
 export default router;
-
- 
