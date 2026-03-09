@@ -24,7 +24,7 @@ function distribute(items, total) {
   return shuffle(result);
 }
 
-// ✅ This builds the exact structure shown in preview
+// ✅ NO outer color override - pitch content carries its own colors from CreatePitch
 function buildFollowupHtml({
   followUpBody,
   originalBody,
@@ -35,8 +35,8 @@ function buildFollowupHtml({
   baseColor
 }) {
   return `
-<div style="color:${baseColor || '#000000'}; font-family: Calibri, sans-serif;">
-      <!-- Follow-up message -->
+<div style="font-family: Calibri, sans-serif;">
+      <!-- Follow-up body: color comes from pitch HTML itself, not forced here -->
       <div>
         ${followUpBody}
       </div>
@@ -44,12 +44,8 @@ function buildFollowupHtml({
       <br />
       <hr style="border:none;border-top:1px solid #ccc;margin:16px 0;" />
 
-      <!-- Thread header -->
-      <div style="
-        font-size:14px;
-        line-height:1.5;
-        color:${baseColor};
-      ">
+      <!-- Thread header: neutral black -->
+      <div style="font-size:14px; line-height:1.5; color:#000000;">
         <b>From:</b> ${from}<br/>
         <b>Sent:</b> ${sentAt}<br/>
         <b>To:</b> ${to}<br/>
@@ -59,12 +55,7 @@ function buildFollowupHtml({
       <br />
 
       <!-- Previous message -->
-      <blockquote style="
-        margin:0;
-        padding-left:5px;
-        border-left:2px solid #ccc;
-        color:${baseColor};
-      ">
+      <blockquote style="margin:0; padding-left:5px; border-left:2px solid #ccc; color:#000000;">
         ${originalBody}
       </blockquote>
 
@@ -78,29 +69,18 @@ function buildSignature(account, senderRole, baseStyles = {}) {
     account.email?.split("@")[0] ||
     "Sender";
 
-  // ✅ Default fallback role
   const role = senderRole?.trim() || "Marketing Analyst";
 
-  const safeStyles = {
-    fontFamily: baseStyles.fontFamily || "Calibri, sans-serif",
-    fontSize: baseStyles.fontSize || "15px",
-    color: baseStyles.color || "#000000",
-  };
+  // ✅ Color comes from extractBaseStyles which reads the pitch wrapper div color
+  const sigColor = baseStyles.color || "#000000";
+  const sigFont = baseStyles.fontFamily || "Calibri, sans-serif";
+  const sigSize = baseStyles.fontSize || "15px";
 
   return `
-    <div style="
-      margin-top:16px;
-      font-family:${safeStyles.fontFamily};
-      font-size:${safeStyles.fontSize};
-      line-height:1.6;
-    ">
-      <span style="color:${safeStyles.color}; font-weight:bold;">
-        Regards,
-      </span>
+    <div style="margin-top:16px; font-family:${sigFont}; font-size:${sigSize}; line-height:1.6; color:${sigColor};">
+      <span style="color:${sigColor}; font-weight:bold;">Regards,</span>
       <br/>
-      <span style="color:${safeStyles.color}; font-weight:bold;">
-        ${name} - ${role}
-      </span>
+      <span style="color:${sigColor}; font-weight:bold;">${name} - ${role}</span>
     </div>
   `;
 }
@@ -175,27 +155,47 @@ function normalizeHtmlForEmail(html) {
 function extractBaseStyles(html) {
   const fontFamilyMatch = html.match(/font-family:\s*([^;}"']+)/i);
   const fontSizeMatch = html.match(/font-size:\s*([^;}"']+)/i);
-  
-  // Better color extraction - look for color in style attributes
+
+  const UNSAFE = new Set(['#fff', '#ffffff', 'white', 'transparent', 'inherit', '']);
   let color = '#000000';
-  
-  // Try to find color in inline styles
-  const colorStyleMatch = html.match(/style="[^"]*color:\s*([^;"]+)/i);
-  if (colorStyleMatch) {
-    color = colorStyleMatch[1].trim();
-  } else {
-    // Try to find color in span style
-    const spanColorMatch = html.match(/<span[^>]*style="[^"]*color:\s*([^;"]+)/i);
-    if (spanColorMatch) {
-      color = spanColorMatch[1].trim();
+
+  // ✅ Priority 1: Wrapper <div style="...color:#XXXXX"> written by CreatePitch.jsx on save
+  // This is the most reliable source - it's the intentional color the user chose
+  const wrapperDivMatch = html.match(/^\s*<div[^>]*style="([^"]*)"/i);
+  if (wrapperDivMatch) {
+    const styleStr = wrapperDivMatch[1];
+    const colorInDiv = styleStr.match(/\bcolor:\s*(#[0-9a-fA-F]{3,6})/i);
+    if (colorInDiv) {
+      const c = colorInDiv[1].trim();
+      if (!UNSAFE.has(c.toLowerCase())) {
+        color = c;
+      }
     }
   }
-  
-  // Ensure we have a valid color
-  if (!color || color === 'inherit') {
-    color = '#000000';
+
+  // ✅ Priority 2: <font color="#..."> — browser writes this for execCommand('foreColor')
+  // Only use this if wrapper div had no color (old pitches saved before fix)
+  if (color === '#000000') {
+    const fontTagColor = html.match(/<font[^>]*\bcolor="(#[0-9a-fA-F]{3,6})"/i);
+    if (fontTagColor) {
+      const c = fontTagColor[1].trim();
+      if (!UNSAFE.has(c.toLowerCase())) {
+        color = c;
+      }
+    }
   }
-  
+
+  // ✅ Priority 3: <span style="color:#..."> — fallback for styled spans
+  if (color === '#000000') {
+    const spanColor = html.match(/<span[^>]*style="[^"]*\bcolor:\s*(#[0-9a-fA-F]{3,6})/i);
+    if (spanColor) {
+      const c = spanColor[1].trim();
+      if (!UNSAFE.has(c.toLowerCase())) {
+        color = c;
+      }
+    }
+  }
+
   return {
     fontFamily: fontFamilyMatch ? fontFamilyMatch[1].trim() : 'Calibri, sans-serif',
     fontSize: fontSizeMatch ? fontSizeMatch[1].trim() : '15px',

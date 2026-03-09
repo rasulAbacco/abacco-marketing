@@ -172,6 +172,31 @@ export default function CreatePitch({ pitch, onSaved }) {
     }
   }, [pitch]);
 
+  // ✅ Extract the actual dominant text color from editor HTML
+  // Reads from font tags, span color styles, or falls back to currentColor state
+  const extractDominantColor = (html) => {
+    const UNSAFE = new Set(['#fff', '#ffffff', 'white', 'transparent', 'inherit', '']);
+    
+    // Check <font color="..."> tags (browser uses these for execCommand foreColor)
+    const fontColorMatch = html.match(/<font[^>]*color="(#[0-9a-fA-F]{3,6})"/i);
+    if (fontColorMatch) {
+      const c = fontColorMatch[1].trim();
+      if (!UNSAFE.has(c.toLowerCase())) return c;
+    }
+    
+    // Check <span style="color:..."> tags
+    const spanColorMatch = html.match(/<span[^>]*style="[^"]*color:\s*(#[0-9a-fA-F]{3,6})/i);
+    if (spanColorMatch) {
+      const c = spanColorMatch[1].trim();
+      if (!UNSAFE.has(c.toLowerCase())) return c;
+    }
+
+    // Fallback to currentColor state (set when user clicks color picker)
+    if (currentColor && !UNSAFE.has(currentColor.toLowerCase())) return currentColor;
+    
+    return '#000000';
+  };
+
   const handleSave = async () => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -180,11 +205,16 @@ export default function CreatePitch({ pitch, onSaved }) {
 
     let html = editor.innerHTML || "";
     
-    // Don't force black color - preserve the user's color choice
-    if (!html.trim().startsWith('<div') || !html.includes('style=')) {
-      const currentEditorColor = currentColor || "#000000";
-      html = `<div style="font-family: Calibri, sans-serif; font-size: 13px; line-height: 1.6; color: ${currentEditorColor};">${html}</div>`;
-    }
+    // ✅ Always detect the actual color from the editor content
+    const dominantColor = extractDominantColor(html);
+    
+    // Always wrap in a div with the correct detected color so extractBaseStyles works reliably
+    // Strip existing outer wrapper first if present to avoid double-wrapping
+    const strippedHtml = html.trim().startsWith('<div') && html.includes('style=')
+      ? html  // already has wrapper - update its color below
+      : html;
+
+    html = `<div style="font-family: Calibri, sans-serif; font-size: 13px; line-height: 1.6; color: ${dominantColor};">${strippedHtml}</div>`;
 
     const text = html.replace(/<[^>]*>/g, "").toLowerCase();
 
