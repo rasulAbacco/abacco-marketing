@@ -1,3 +1,4 @@
+// FIXED: CampaignDetail.jsx - Follow-up creation and preview fixes
 import React, { useEffect, useState } from "react";
 import { Send, Plus, Trash2, Eye, Mail, Users, Target, Zap, CheckCircle2, Calendar, Sparkles, X, UserCog } from "lucide-react";
 import ShowsRecipients from "./ShowsRecipients";
@@ -61,14 +62,14 @@ export default function CampaignDetail() {
   const [modal, setModal] = useState({ open: false, type: "", message: "" });
   const [showRecipientModal, setShowRecipientModal] = useState(false);
   const [campaignData, setCampaignData] = useState(null);
-  const [show2ndFollowup, setShow2ndFollowup] = useState(false);
+  const [followupLevel, setFollowupLevel] = useState(1); // 1=1st, 2=2nd, 3=3rd, 4=4th
   const { id } = useParams();
 
 
   // ------------------------------
   // Fetch campaigns
   // ------------------------------
-  const fetchCampaigns = (isSecondFollowup = false) => {
+  const fetchCampaigns = (level = 1) => {
     fetch(`${API_BASE_URL}/api/campaigns`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -108,12 +109,10 @@ export default function CampaignDetail() {
               !campaignsWithActiveFollowups.has(c.id);
 
             if (!isBase) return false;
+            if (completedCount >= 4) return false;
 
-            if (isSecondFollowup) {
-              return completedCount === 1;
-            } else {
-              return completedCount === 0;
-            }
+            // Show only campaigns that match the selected follow-up level
+            return completedCount === level - 1;
           })
           .map(c => ({
             ...c,
@@ -124,10 +123,9 @@ export default function CampaignDetail() {
       })
       .catch(console.error);
   };
-
   useEffect(() => {
-    fetchCampaigns(show2ndFollowup);
-  }, [show2ndFollowup]);
+    fetchCampaigns(followupLevel);
+  }, [followupLevel]);
 
 
   useEffect(() => {
@@ -411,21 +409,26 @@ export default function CampaignDetail() {
                     <CardTitle>Select Campaign</CardTitle>
                   </div>
 
-                  {/* 2nd Follow-up Toggle Button */}
-                  <button
-                    onClick={() => {
-                      setShow2ndFollowup(prev => !prev);
-                      setSelectedCampaignId("");
-                      setLoadedCampaign(null);
-                    }}
-                    className={`px-4 py-2 text-xs font-bold rounded-xl border-2 transition-all transform hover:scale-105 ${
-                      show2ndFollowup
-                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-600 shadow-lg shadow-emerald-500/30"
-                        : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    }`}
-                  >
-                    2nd Follow-up
-                  </button>
+                  {/* Follow-up Level Selector */}
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4].map(level => (
+                      <button
+                        key={level}
+                        onClick={() => {
+                          setFollowupLevel(level);
+                          setSelectedCampaignId("");
+                          setLoadedCampaign(null);
+                        }}
+                        className={`px-3 py-2 text-xs font-bold rounded-xl border-2 transition-all transform hover:scale-105 ${
+                          followupLevel === level
+                            ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-600 shadow-lg shadow-emerald-500/30"
+                            : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        }`}
+                      >
+                        {level === 1 ? "1st" : level === 2 ? "2nd" : level === 3 ? "3rd" : "4th"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -437,7 +440,7 @@ export default function CampaignDetail() {
                   <option value="">-- Choose a campaign --</option>
                   {campaigns.map((c) => {
                     const completedCount = c.recipients?.filter(r => r.status === "sent" || r.status === "completed").length || 0;
-                    const ordinal = c.followupNumber === 2 ? "2nd" : "1st";
+                    const ordinal = c.followupNumber === 2 ? "2nd" : c.followupNumber === 3 ? "3rd" : c.followupNumber === 4 ? "4th" : "1st";
                     return (
                       <option key={c.id} value={c.id}>
                         {c.name} — {ordinal} Follow-up ({completedCount} recipients)

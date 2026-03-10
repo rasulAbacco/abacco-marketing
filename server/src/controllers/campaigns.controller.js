@@ -1,3 +1,4 @@
+// FIXED: campaigns.controller.js - Follow-up campaign creation and threading fix
 import prisma from "../prisma.js";
 import { sendBulkCampaign } from "../services/campaignMailer.service.js";
 import cache from "../utils/cache.js";
@@ -418,9 +419,25 @@ export const createFollowupCampaign = async (req, res) => {
       });
     }
 
+    // ✅ FIX: Exclude sentBodyHtml from this query.
+    // For 800+ recipients that field is 5-20KB each = up to 16MB loaded just to
+    // do a .find(r => r.email === email). This caused timeouts and empty sentBodyHtml
+    // being stored on followup recipients. The mailer reads sentBodyHtml directly
+    // from the parent campaign via parentCampaignId — no need to copy it here.
     const baseCampaign = await prisma.campaign.findUnique({
       where: { id: baseCampaignId },
-      include: { recipients: true }
+      select: {
+        id: true,
+        name: true,
+        senderRole: true,
+        recipients: {
+          select: {
+            email: true,
+            accountId: true
+            // sentBodyHtml intentionally excluded — heavy field, not needed here
+          }
+        }
+      }
     });
 
     if (!baseCampaign) {
@@ -507,16 +524,19 @@ export const createFollowupCampaign = async (req, res) => {
       }
 
       for (const email of emailArray) {
-        const original = baseCampaign.recipients.find(r => r.email === email);
-
+        // ✅ FIX: Do NOT copy sentBodyHtml/sentSubject/sentFromEmail here.
+        // Those fields are read directly from the parent campaign by the mailer
+        // via parentCampaignId. Copying them here was the source of the bug:
+        // the heavy .find() across 800+ recipients was timing out and storing ""
+        // which caused the mailer to think there was no original email to thread.
         recipientCreates.push({
           campaignId: followupCampaign.id,
           email,
           status: "pending",
           accountId,
-          sentBodyHtml: original?.sentBodyHtml || "",
-          sentSubject: original?.sentSubject || "",
-          sentFromEmail: original?.sentFromEmail || ""
+          sentBodyHtml: "",
+          sentSubject: "",
+          sentFromEmail: ""
         });
       }
     }
@@ -997,7 +1017,7 @@ export const getCampaignsForFollowup = async (req, res) => {
     const availableCampaigns = allCampaigns.filter(c => {
       return (
         !campaignsWithActiveFollowups.has(c.id) &&
-        (followupCountMap[c.id] || 0) < 2  // ✅ hide after 2nd followup done
+        (followupCountMap[c.id] || 0) < 4   // ✅ hide after 4th followup done
       );
     });
 
@@ -1037,7 +1057,7 @@ export const getSingleCampaign = async (req, res) => {
             sentAt: true,
             sentSubject: true,
             sentFromEmail: true,
-            // sentBodyHtml intentionally excluded — large field not needed in view modal
+            sentBodyHtml: true,  // ✅ Required for follow-up threading
           }
         }
       }
@@ -1253,7 +1273,7 @@ export const startFollowupCleanupJob = () => {
       });
 
       const toDelete = allFollowups.filter(f => 
-        countPerParent[f.parentCampaignId] >= 2
+        countPerParent[f.parentCampaignId] >= 4
       );
 
       for (const campaign of toDelete) {

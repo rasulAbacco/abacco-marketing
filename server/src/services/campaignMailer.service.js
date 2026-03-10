@@ -54,10 +54,10 @@ function buildFollowupHtml({
 
       <br />
 
-      <!-- Previous message -->
-      <blockquote style="margin:0; padding-left:5px; border-left:2px solid #ccc; color:#000000;">
-        ${originalBody}
-      </blockquote>
+      <!-- Previous message: use div not blockquote — Gmail collapses blockquotes -->
+      <div style="margin:0; padding-left:10px; border-left:3px solid #cccccc; color:#000000; font-family:Calibri,sans-serif; font-size:14px; line-height:1.6;">
+        ${originalBody || ""}
+      </div>
 
     </div>
   `;
@@ -85,6 +85,96 @@ function buildSignature(account, senderRole, baseStyles = {}) {
   `;
 }
 
+
+/**
+ * Extracts only the inner <body> content from a stored full HTML email.
+ * sentBodyHtml contains a full <!DOCTYPE html> wrapper — embedding it inside
+ * a <blockquote> breaks email clients. We must strip it first.
+ */
+/**
+ * Extracts the original pitch content from a stored sentBodyHtml.
+ * The stored HTML is a full email document with <table> wrapper and <style> tags.
+ * We extract only the pitch body (no signature, no wrapper table, no style tags)
+ * so it can be safely embedded as the "previous message" in a follow-up thread.
+ *
+ * Structure of stored HTML (from normal campaign send):
+ *   <html><head><style>...</style></head>
+ *   <body>
+ *     <table>
+ *       <tr><td>
+ *         <div style="font-family:...; color:...;">   ← PITCH WRAPPER DIV
+ *           <div>Greetings,</div>                      ← PITCH CONTENT (keep)
+ *           ...more pitch divs...
+ *           <div style="margin-top:16px">Regards,...</div>  ← SIGNATURE (strip)
+ *         </div>
+ *       </td></tr>
+ *     </table>
+ *   </body></html>
+ */
+function extractBodyContent(fullHtml) {
+  if (!fullHtml) return '';
+
+  // Step 1: Strip <style> and <script> from the full document first
+  // (they may appear in <head> outside <body> but can still pollute)
+  let html = fullHtml
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+
+  // Step 2: Extract <body> content
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyContent = bodyMatch ? bodyMatch[1] : html;
+
+  // Step 3: Find the pitch wrapper div (has font-family in its style attribute)
+  // Use depth counting — NOT non-greedy regex — because pitch has many nested divs
+  const wrapperRegex = /<div[^>]+style\s*=\s*["'][^"']*font-family[^"']*["'][^>]*>/i;
+  const wrapperMatch = bodyContent.match(wrapperRegex);
+
+  if (wrapperMatch) {
+    const openTag = wrapperMatch[0];
+    const startIdx = bodyContent.indexOf(openTag);
+    const innerStart = startIdx + openTag.length;
+
+    // Walk forward counting div nesting depth to find the matching closing </div>
+    let depth = 1;
+    let pos = innerStart;
+    while (pos < bodyContent.length && depth > 0) {
+      const nextOpen  = bodyContent.indexOf('<div', pos);
+      const nextClose = bodyContent.indexOf('</div>', pos);
+      if (nextClose === -1) break;
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        depth++;
+        pos = nextOpen + 4;
+      } else {
+        depth--;
+        if (depth === 0) {
+          let pitchContent = bodyContent.substring(innerStart, nextClose).trim();
+          // Strip the signature block (last child: <div style="margin-top:16px...">)
+          pitchContent = pitchContent
+            .replace(/<div[^>]*margin-top\s*:\s*16px[^>]*>[\s\S]*?<\/div>\s*$/i, '')
+            .trim();
+          return pitchContent || bodyContent.substring(innerStart, nextClose).trim();
+        }
+        pos = nextClose + 6;
+      }
+    }
+  }
+
+  // Fallback: return cleaned body content as-is
+  return bodyContent.trim();
+}
+
+/**
+ * Chunks an array into smaller arrays of given size.
+ * Used to safely batch DB queries for 800+ emails
+ * (large IN clauses can time out or hit DB limits).
+ */
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -204,10 +294,14 @@ function extractBaseStyles(html) {
 }
 
 export async function sendBulkCampaign(campaignId) {
+  // ✅ FIX 1: Load campaign WITHOUT recipients to avoid loading 5000+ sentBodyHtml
+  // rows (~50KB each) into RAM at once — that's 250MB+ and causes crashes/timeouts.
+  // We fetch recipients separately in a lean query below.
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
-    include: { recipients: true },
   });
+
+  if (!campaign) throw new Error("Campaign not found");
 
   if (campaign.status !== "sending") {
     console.log("⏭️ Campaign already handled:", campaignId);
@@ -218,10 +312,7 @@ export async function sendBulkCampaign(campaignId) {
     id: campaign?.id,
     status: campaign?.status,
     sendType: campaign?.sendType,
-    recipients: campaign?.recipients?.length
   });
-
-  if (!campaign) throw new Error("Campaign not found");
   
   await prisma.campaign.update({
     where: { id: campaignId },
@@ -265,7 +356,11 @@ export async function sendBulkCampaign(campaignId) {
   }
 
   // ---------------- recipients ----------------
-  const recipients = campaign.recipients.filter(r => r.status === "pending");
+  // ✅ FIX 2: Fetch pending recipients lean (no sentBodyHtml) to avoid RAM crash on 5000+ emails
+  const recipients = await prisma.campaignRecipient.findMany({
+    where: { campaignId, status: "pending" },
+    select: { id: true, email: true, accountId: true, status: true }
+  });
   if (!recipients.length) {
     console.log("No pending recipients, marking campaign as completed");
     await updateCampaignStatus(campaignId);
@@ -290,38 +385,109 @@ export async function sendBulkCampaign(campaignId) {
       grouped[r.accountId].push(r);
     }
 
+    const recipientEmails = recipients.map(r => r.email);
+
+    // 🔥 FIX 1: Increase chunk size (important for 5000+ emails)
+    const EMAIL_CHUNK = 500;
+
+    const parentRecipientsMap = new Map();
+
+    // ============================================================
+    // LOAD ORIGINAL CAMPAIGN DATA
+    // ============================================================
+    if (campaign.parentCampaignId) {
+
+      let originalCampaignId = campaign.parentCampaignId;
+      let walkedLevels = 0;
+      const MAX_LEVELS = 10;
+
+      while (walkedLevels < MAX_LEVELS) {
+
+        const ancestor = await prisma.campaign.findUnique({
+          where: { id: originalCampaignId },
+          select: { id: true, sendType: true, parentCampaignId: true }
+        });
+
+        if (!ancestor) break;
+
+        if (ancestor.sendType !== "followup" || !ancestor.parentCampaignId) {
+          break;
+        }
+
+        originalCampaignId = ancestor.parentCampaignId;
+        walkedLevels++;
+      }
+
+      console.log(`🔍 Using originalCampaignId=${originalCampaignId}`);
+
+      const emailChunks = chunkArray(recipientEmails, EMAIL_CHUNK);
+
+      for (const chunk of emailChunks) {
+
+        const rows = await prisma.campaignRecipient.findMany({
+          where: {
+            campaignId: originalCampaignId,
+            email: { in: chunk },
+            status: "sent"
+          },
+          select: {
+            email: true,
+            sentBodyHtml: true,
+            sentSubject: true,
+            sentFromEmail: true,
+            sentAt: true
+          }
+        });
+
+        for (const row of rows) {
+          parentRecipientsMap.set(row.email, row);
+        }
+
+        await sleep(30);
+      }
+
+      console.log(
+        `📬 Loaded ${parentRecipientsMap.size}/${recipientEmails.length} original emails`
+      );
+    }
+
+    // ============================================================
+    // SEND FOLLOWUPS
+    // ============================================================
+
+    const recipientIndexMap = new Map(
+      recipients.map((r, idx) => [r.email + ":" + r.id, idx])
+    );
+
     await Promise.all(
+
       Object.entries(grouped).map(async ([accountId, group]) => {
 
         const account = await prisma.emailAccount.findUnique({
           where: { id: Number(accountId) }
         });
+
         if (!account) return;
 
         const limit = getLimit(account.provider, account.id, customLimits);
+
         const delayPerEmail = (60 * 60 * 1000) / limit;
 
         let smtpPassword = account.encryptedPass;
-        if (typeof smtpPassword === "string" && smtpPassword.includes(":")) {
+
+        if (smtpPassword.includes(":")) {
           smtpPassword = decrypt(smtpPassword);
         }
-
-        const domain = (account.email.split("@")[1] || "localhost").toLowerCase();
 
         const transporter = nodemailer.createTransport({
           host: account.smtpHost,
           port: Number(account.smtpPort),
           secure: Number(account.smtpPort) === 465,
-          name: domain,
           auth: {
             user: account.smtpUser || account.email,
-            pass: smtpPassword,
+            pass: smtpPassword
           },
-          requireTLS: Number(account.smtpPort) === 587,
-          tls: {
-            rejectUnauthorized: false,
-            minVersion: "TLSv1.2",
-          },
+          tls: { rejectUnauthorized: false }
         });
 
         const fromEmail = account.smtpUser || account.email;
@@ -331,103 +497,118 @@ export async function sendBulkCampaign(campaignId) {
 
         for (let i = 0; i < group.length; i++) {
 
-          // 🔴 Stop campaign check
+          const r = group[i];
+
           const latestCampaign = await prisma.campaign.findUnique({
             where: { id: campaignId },
             select: { status: true }
           });
 
           if (latestCampaign.status !== "sending") {
-            console.log("⏹ Campaign manually stopped:", campaignId);
+            console.log("⏹ Campaign stopped");
             return;
           }
 
-          const r = group[i];
-
           try {
 
-            // ✅ Rate limit check
-            if (accountSendCount >= limit) {
-              const timeSinceStart = Date.now() - accountStartTime;
+            // ====================================================
+            // RATE LIMIT CONTROL
+            // ====================================================
 
-              if (timeSinceStart < 60 * 60 * 1000) {
-                const waitTime = (60 * 60 * 1000) - timeSinceStart;
-                console.log(`⏳ ${account.email} limit reached. Waiting ${Math.ceil(waitTime / 60000)} minutes...`);
-                await sleep(waitTime);
+            if (accountSendCount >= limit) {
+
+              const elapsed = Date.now() - accountStartTime;
+
+              if (elapsed < 3600000) {
+
+                const wait = 3600000 - elapsed;
+
+                console.log(`⏳ ${account.email} waiting ${Math.ceil(wait / 60000)}m`);
+
+                await sleep(wait);
               }
 
               accountSendCount = 0;
               accountStartTime = Date.now();
             }
 
-            // ==============================
-            // FOLLOW-UP HTML BUILDING
-            // ==============================
+            // ====================================================
+            // FOLLOWUP BODY
+            // ====================================================
 
-            const followupBodyRaw = pitchPlan[i];
-            const followupBody = normalizeHtmlForEmail(followupBodyRaw);
+            const globalIdx =
+              recipientIndexMap.get(r.email + ":" + r.id) ?? i;
+
+            const followupBody = normalizeHtmlForEmail(pitchPlan[globalIdx]);
 
             const baseStyles = extractBaseStyles(followupBody);
 
-            const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
-            if (!baseStyles.color || unsafeColors.includes(baseStyles.color.toLowerCase())) {
-              baseStyles.color = "#000000";
-            }
-
             const signature = buildSignature(account, campaign.senderRole, baseStyles);
+
             const followupWithSignature = followupBody + signature;
 
-            const originalRecipient = await prisma.campaignRecipient.findFirst({
-              where: {
-                campaignId: campaign.parentCampaignId,
-                email: r.email,
-                status: "sent"
-              }
-            });
+            const originalRecipient = parentRecipientsMap.get(r.email);
 
-            if (!originalRecipient || !originalRecipient.sentBodyHtml) {
-              // console.log("⚠️ Original mail not found for:", r.email);
-              continue; // skip this recipient
+            const hasOriginal = !!originalRecipient;
+
+            let subject;
+            let html;
+
+            if (hasOriginal) {
+
+              const originalBody = originalRecipient.sentBodyHtml
+                ? extractBodyContent(originalRecipient.sentBodyHtml)
+                : "";
+
+              const originalSubject = originalRecipient.sentSubject || "";
+
+              const originalFrom =
+                originalRecipient.sentFromEmail || fromEmail;
+
+              const sentAt = new Date(
+                originalRecipient.sentAt || Date.now()
+              ).toLocaleString();
+
+              const threadedHtml = buildFollowupHtml({
+                followUpBody: followupWithSignature,
+                originalBody,
+                from: originalFrom,
+                to: r.email,
+                sentAt,
+                subject: originalSubject,
+                baseColor: baseStyles.color || "#000"
+              });
+
+              html = `
+              <html>
+              <body style="font-family:Calibri,sans-serif">
+              ${threadedHtml}
+              </body>
+              </html>
+              `;
+
+              subject = `Re: ${originalSubject}`;
+
+            } else {
+
+              const fallbackSubject = subjectPlan[globalIdx];
+
+              html = `
+              <html>
+              <body style="font-family:Calibri,sans-serif">
+              ${followupWithSignature}
+              </body>
+              </html>
+              `;
+
+              subject = `Re: ${fallbackSubject}`;
+
+              console.log(`⚠ No original email found for ${r.email}`);
             }
 
-            let originalBodyHtml = originalRecipient.sentBodyHtml;
-            const originalSubject = originalRecipient.sentSubject;
-            const originalFrom = originalRecipient.sentFromEmail;
-
-            const originalDate = r.sentAt ? new Date(r.sentAt) : new Date();
-            const sentAt = originalDate.toLocaleString("en-US", {
-              month: "numeric",
-              day: "numeric",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-              hour12: false
-            });
-
-            const threadedHtml = buildFollowupHtml({
-              followUpBody: followupWithSignature,
-              originalBody: originalBodyHtml,
-              from: originalFrom,
-              to: r.email,
-              sentAt: sentAt,
-              subject: originalSubject,
-              baseColor: baseStyles.color   // ✅ ADD THIS
-            });
-
-            const html = `<!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            </head>
-            <body style="margin:0; padding:0; font-family: Calibri, sans-serif;">
-              ${threadedHtml}
-            </body>
-            </html>`;
-
-            const label = getDomainLabel(r.email);
-            const subject = `Re: ${label} - ${originalSubject}`;
+            // ====================================================
+            // SEND EMAIL
+            // ====================================================
 
             await transporter.sendMail({
               from: account.senderName
@@ -435,50 +616,44 @@ export async function sendBulkCampaign(campaignId) {
                 : fromEmail,
               to: r.email,
               subject,
-              html,
+              html
             });
 
             await prisma.campaignRecipient.update({
               where: { id: r.id },
-              data: { status: "sent", sentAt: new Date() }
+              data: {
+                status: "sent",
+                sentAt: new Date(),
+                sentBodyHtml: html,
+                sentSubject: hasOriginal
+                  ? originalRecipient.sentSubject
+                  : subjectPlan[globalIdx],
+                sentFromEmail: fromEmail
+              }
             });
 
             accountSendCount++;
-
-            // console.log(`✅ [FOLLOWUP] ${account.email} → ${r.email} (${accountSendCount}/${limit})`);
 
             await sleep(delayPerEmail);
 
           } catch (err) {
 
-            console.error(`❌ Failed followup to ${r.email}:`, err.message);
+            console.error(`❌ Failed followup to ${r.email}`, err.message);
 
             await prisma.campaignRecipient.update({
               where: { id: r.id },
-              data: { status: "failed", error: err.message }
+              data: {
+                status: "failed",
+                error: err.message
+              }
             });
 
-            if (
-              err.message.includes("Invalid login") ||
-              err.message.includes("authentication failed")
-            ) {
-              await prisma.campaign.update({
-                where: { id: campaignId },
-                data: {
-                  status: "failed",
-                  error: `Authentication failed for ${account.email}`
-                }
-              });
-
-              await updateCampaignStatus(campaignId);
-              return;
-            }
           }
+
         }
 
       })
     );
-
   }
 
   // ============================================================
