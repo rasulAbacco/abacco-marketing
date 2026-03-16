@@ -173,22 +173,33 @@ const CampaignProgress = ({ campaignId }) => {
 };
 
 const CampaignTiming = ({ campaign }) => {
-  // ✅ PERF FIX: Compute timing synchronously from already-loaded campaign data.
-  // Previously this made an extra /progress API call just to show timing — removed.
+  // ✅ FIX: estimatedCompletion is calculated ONCE at campaign creation in the
+  // controller (recipients / hourlyCapacity) and stored in DB.
+  // Do NOT recalculate on the frontend — the old live-rate formula caused the
+  // Est. Completion time to keep shifting every 5s as the observed rate
+  // fluctuated. The per-account countdown ETA lives in the progress table below.
+  const isActive = campaign.status === "sending";
+
   const timing = useMemo(() => {
-    if (campaign.status !== "sending" && campaign.status !== "completed" && campaign.status !== "completed_with_errors") {
-      return { startTime: null, endTime: null, estimatedCompletion: null, duration: null, isActive: false };
+    const isCompleted = campaign.status === "completed" || campaign.status === "completed_with_errors";
+    if (!isActive && !isCompleted) {
+      return { startTime: null, endTime: null, estimatedCompletion: null, duration: null };
     }
 
+    // Use campaign.createdAt as start time — always available and never stale.
+    const startTime = campaign.createdAt ? new Date(campaign.createdAt) : null;
+
+    // End time: from recipients for completed campaigns
     const sentRecipients = campaign.recipients?.filter(r => r.sentAt) || [];
     const sorted = [...sentRecipients].sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));
-
-    const firstSent = sorted[0];
     const lastSent = sorted[sorted.length - 1];
-
-    const startTime = firstSent?.sentAt ? new Date(firstSent.sentAt) : null;
-    const endTime = (campaign.status === "completed" || campaign.status === "completed_with_errors")
+    const endTime = isCompleted
       ? (lastSent?.sentAt ? new Date(lastSent.sentAt) : null)
+      : null;
+
+    // ✅ Always use the DB-stored estimatedCompletion — fixed at creation, never drifts.
+    const estimatedCompletion = campaign.estimatedCompletion
+      ? new Date(campaign.estimatedCompletion)
       : null;
 
     let duration = null;
@@ -199,8 +210,8 @@ const CampaignTiming = ({ campaign }) => {
       duration = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
     }
 
-    return { startTime, endTime, duration, estimatedCompletion: null, isActive: campaign.status === "sending" };
-  }, [campaign]);
+    return { startTime, endTime, duration, estimatedCompletion };
+  }, [campaign, isActive]);
 
   return (
     <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 rounded-2xl p-5 border border-emerald-200/50 shadow-sm">
@@ -251,13 +262,15 @@ const CampaignTiming = ({ campaign }) => {
           </div>
         )}
         
-        {timing.isActive && timing.estimatedCompletion && (
+        {timing.estimatedCompletion && (
           <div className="group relative bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-amber-200/50 shadow-sm hover:shadow-md transition-all hover:border-amber-300">
             <div className="flex items-center gap-2 mb-2">
               <div className="p-1 bg-amber-100 rounded-lg">
-                <Activity className="text-amber-600 animate-pulse" size={14} />
+                <Activity className={`text-amber-600 ${isActive ? "animate-pulse" : ""}`} size={14} />
               </div>
-              <span className="text-xs font-bold text-amber-700 uppercase tracking-wide">Est. Completion</span>
+              <span className="text-xs font-bold text-amber-700 uppercase tracking-wide">
+                {isActive ? "Est. Completion" : "Was Est. At"}
+              </span>
             </div>
             <p className="text-sm font-bold text-slate-900">
               {timing.estimatedCompletion.toLocaleString("en-US", {

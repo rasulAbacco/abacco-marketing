@@ -854,12 +854,13 @@ export const getCampaignProgress = async (req, res) => {
         limit = customLimits[acc.id];
       }
 
-      const total = row.processing + row.completed;
+      // ✅ FIX: Use only REMAINING (processing) emails for ETA, not total.
+      // Previously used (processing + completed) which gave a fixed number
+      // that never decreased as emails were sent.
+      const remainingHoursNeeded = row.processing / limit;
+      const remainingMsNeeded = remainingHoursNeeded * 60 * 60 * 1000;
 
-      const totalHoursNeeded = total / limit;
-      const totalMsNeeded = totalHoursNeeded * 60 * 60 * 1000;
-
-      row.eta = formatDuration(totalMsNeeded);
+      row.eta = row.processing === 0 ? "Done" : formatDuration(remainingMsNeeded);
 
     }
 

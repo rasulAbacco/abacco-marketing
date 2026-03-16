@@ -10,49 +10,42 @@ import { api } from "../utils/api.js";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function InboxMain() {
-  // Sidebar state
+  // ── Sidebar ──────────────────────────────────────────────
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Accounts state
+  // ── Accounts ─────────────────────────────────────────────
   const [accounts, setAccounts] = useState([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
 
-  // Selection state
+  // ── Selection ────────────────────────────────────────────
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState("inbox");
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // ✅ Initialize activeView from localStorage
-  const [activeView, setActiveView] = useState(() => {
-    return localStorage.getItem("activeView") || "inbox";
-  });
+  // ── Active view (persisted across reloads) ───────────────
+  const [activeView, setActiveView] = useState(
+    () => localStorage.getItem("activeView") || "inbox"
+  );
 
-    // ✅ MUST be here
-  const handleRefreshInbox = () => {
-    setRefreshKey(prev => prev + 1);
-  };
+  // ── Month filter ─────────────────────────────────────────
+  // Supported values: "current" | "last" | "three"
+  // Default: current month to keep initial load fast.
+  const [monthFilter, setMonthFilter] = useState("current");
 
-  const handleRefreshAll = () => {
-    setRefreshKey(prev => prev + 1);
-  };
+  // ── Misc handlers ────────────────────────────────────────
+  const handleRefreshInbox = () => setRefreshKey((prev) => prev + 1);
+  const handleRefreshAll   = () => setRefreshKey((prev) => prev + 1);
 
-  // ✅ CALCULATE DEFAULT DATE (3 MONTHS AGO)
-  const getDefaultDateFrom = () => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 3);
-    return d.toISOString().split("T")[0];
-  };
-
-  // Filter state (With Default 3 Months)
+  // ── Filters ──────────────────────────────────────────────
   const [filters, setFilters] = useState({
     leadStatus: "",
     sender: "",
     recipient: "",
     subject: "",
     tags: [],
-    dateFrom: getDefaultDateFrom(),
+    dateFrom: "",
     dateTo: "",
     hasAttachment: false,
     isUnread: false,
@@ -60,65 +53,64 @@ export default function InboxMain() {
     country: "",
   });
 
-  // Search state
+  // ── Search ───────────────────────────────────────────────
   const [searchEmail, setSearchEmail] = useState("");
 
-  // Mobile state
+  // ── Mobile / schedule ────────────────────────────────────
   const [showMobileConversations, setShowMobileConversations] = useState(false);
   const [isScheduleMode, setIsScheduleMode] = useState(false);
   const [selectedConversations, setSelectedConversations] = useState([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  // ── Conversations ─────────────────────────────────────────
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ✅ NEW: Track last fetch time
+  // ── Polling ──────────────────────────────────────────────
   const lastFetchTimeRef = useRef(Date.now());
   const pollingIntervalRef = useRef(null);
 
+  // ─────────────────────────────────────────────────────────
   // Fetch accounts on mount
+  // ─────────────────────────────────────────────────────────
   useEffect(() => {
     fetchAccounts();
   }, []);
 
-  // ✅ NEW: Aggressive auto-refresh every 15 seconds
+  // ─────────────────────────────────────────────────────────
+  // Auto-refresh every 15 s when an account is selected
+  // Re-run whenever account, folder, or monthFilter changes
+  // ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedAccount?.id) return;
 
-    // Clear existing interval
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-    }
+    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
 
-    // Set up new polling interval
     pollingIntervalRef.current = setInterval(() => {
       console.log("🔄 Auto-refresh: Fetching new conversations...");
-      fetchConversations(true); // Pass true to force refresh
-    }, 15000); // 15 seconds
+      fetchConversations(true);
+    }, 15000);
 
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
     };
-  }, [selectedAccount?.id, selectedFolder]);
+  }, [selectedAccount?.id, selectedFolder, monthFilter]);
 
-  // ✅ UPDATED: Initial load with faster refresh
+  // ─────────────────────────────────────────────────────────
+  // Primary fetch: fires once when account / folder /
+  // monthFilter changes. No redundant 3-second follow-up —
+  // the 15-second poller above handles background refreshes.
+  // ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedAccount?.id) return;
-
-    // 1️⃣ Immediate fetch
     fetchConversations();
+  }, [selectedAccount?.id, selectedFolder, monthFilter]);
 
-    // 2️⃣ Quick second fetch after 3 seconds (to catch any synced emails)
-    const quickRefreshTimer = setTimeout(() => {
-      console.log("⚡ Quick refresh after 3 seconds...");
-      fetchConversations(true);
-    }, 3000);
-
-    return () => clearTimeout(quickRefreshTimer);
-  }, [selectedAccount?.id, selectedFolder]);
-
-  // Auto-load based on activeView
+  // ─────────────────────────────────────────────────────────
+  // Reactive fetch: fires when filters, search, or activeView
+  // changes. Account/folder/monthFilter changes are handled
+  // by the dedicated effect above to avoid duplicate fetches.
+  // ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedAccount) return;
 
@@ -132,8 +124,11 @@ export default function InboxMain() {
     } else {
       fetchConversations();
     }
-  }, [selectedAccount, selectedFolder, activeView, filters, searchEmail]);
+  }, [activeView, filters, searchEmail]);
 
+  // ─────────────────────────────────────────────────────────
+  // FETCH ACCOUNTS
+  // ─────────────────────────────────────────────────────────
   const fetchAccounts = async () => {
     try {
       setLoadingAccounts(true);
@@ -171,16 +166,16 @@ export default function InboxMain() {
     }
   };
 
+  // ─────────────────────────────────────────────────────────
+  // FETCH SEARCH RESULTS
+  // ─────────────────────────────────────────────────────────
   const fetchSearchResults = async () => {
-    if (!searchEmail || searchEmail.trim() === "" || !selectedAccount) return;
+    if (!searchEmail?.trim() || !selectedAccount) return;
 
     try {
       setLoading(true);
       const res = await api.get(`${API_BASE_URL}/api/inbox/search`, {
-        params: {
-          query: searchEmail,
-          accountId: selectedAccount.id,
-        },
+        params: { query: searchEmail, accountId: selectedAccount.id },
       });
 
       const rawMessages = res.data?.data || [];
@@ -190,8 +185,7 @@ export default function InboxMain() {
         const convId = msg.conversationId;
         if (
           !uniqueConversations.has(convId) ||
-          new Date(msg.sentAt) >
-            new Date(uniqueConversations.get(convId).sentAt)
+          new Date(msg.sentAt) > new Date(uniqueConversations.get(convId).sentAt)
         ) {
           uniqueConversations.set(convId, msg);
         }
@@ -226,28 +220,31 @@ export default function InboxMain() {
     }
   };
 
-  // ✅ UPDATED: Force refresh with cache busting
+  // ─────────────────────────────────────────────────────────
+  // FETCH CONVERSATIONS  ← monthFilter is included here
+  // ─────────────────────────────────────────────────────────
   const fetchConversations = async (forceRefresh = false) => {
     if (!selectedAccount) return;
 
     try {
       setLoading(true);
-      const params = { 
+
+      const params = {
         folder: selectedFolder,
-        // ✅ Add timestamp to bust cache
-        _t: forceRefresh ? Date.now() : undefined
+        monthFilter,                              // ← NEW
+        _t: forceRefresh ? Date.now() : undefined,
       };
 
-      if (filters.leadStatus) params.leadStatus = filters.leadStatus;
-      if (filters.country) params.country = filters.country;
-      if (filters.sender) params.sender = filters.sender;
-      if (filters.recipient) params.recipient = filters.recipient;
-      if (filters.subject) params.subject = filters.subject;
-      if (filters.dateFrom) params.dateFrom = filters.dateFrom;
-      if (filters.dateTo) params.dateTo = filters.dateTo;
+      if (filters.leadStatus)    params.leadStatus    = filters.leadStatus;
+      if (filters.country)       params.country       = filters.country;
+      if (filters.sender)        params.sender        = filters.sender;
+      if (filters.recipient)     params.recipient     = filters.recipient;
+      if (filters.subject)       params.subject       = filters.subject;
+      if (filters.dateFrom)      params.dateFrom      = filters.dateFrom;
+      if (filters.dateTo)        params.dateTo        = filters.dateTo;
       if (filters.hasAttachment) params.hasAttachment = true;
-      if (filters.isUnread) params.isUnread = true;
-      if (filters.isStarred) params.isStarred = true;
+      if (filters.isUnread)      params.isUnread      = true;
+      if (filters.isStarred)     params.isStarred     = true;
 
       const res = await api.get(
         `${API_BASE_URL}/api/inbox/conversations/${selectedAccount.id}`,
@@ -255,19 +252,17 @@ export default function InboxMain() {
       );
 
       const newConversations = res.data?.data || [];
-      
-      // ✅ Log conversation count change
+
       if (conversations.length !== newConversations.length) {
-        console.log(`📊 Conversation count changed: ${conversations.length} → ${newConversations.length}`);
+        console.log(
+          `📊 Conversation count: ${conversations.length} → ${newConversations.length} (filter: ${monthFilter})`
+        );
       }
 
       setConversations(newConversations);
       lastFetchTimeRef.current = Date.now();
 
-      // ✅ Update unread count in sidebar
-      if (forceRefresh) {
-        fetchAccounts();
-      }
+      if (forceRefresh) fetchAccounts();
     } catch (error) {
       console.error("Failed to fetch conversations:", error);
       setConversations([]);
@@ -276,6 +271,9 @@ export default function InboxMain() {
     }
   };
 
+  // ─────────────────────────────────────────────────────────
+  // FETCH TODAY FOLLOW-UPS
+  // ─────────────────────────────────────────────────────────
   const fetchTodayFollowUps = async () => {
     try {
       setLoading(true);
@@ -283,12 +281,8 @@ export default function InboxMain() {
 
       const formatted = res.data.map((msg) => {
         let actualEmail = msg.toEmail;
-        if (msg.toEmail.includes("<") && msg.toEmail.includes(">")) {
-          const match = msg.toEmail.match(/<(.+?)>/);
-          if (match && match[1]) {
-            actualEmail = match[1];
-          }
-        }
+        const match = msg.toEmail.match(/<(.+?)>/);
+        if (match?.[1]) actualEmail = match[1];
 
         return {
           conversationId: msg.conversationId,
@@ -314,7 +308,9 @@ export default function InboxMain() {
     }
   };
 
-  // Helper to update view and persist it
+  // ─────────────────────────────────────────────────────────
+  // HANDLERS
+  // ─────────────────────────────────────────────────────────
   const changeView = (view) => {
     setActiveView(view);
     localStorage.setItem("activeView", view);
@@ -346,13 +342,9 @@ export default function InboxMain() {
     setFilters(newFilters);
   };
 
-  const handleSearchEmail = (email) => {
-    setSearchEmail(email);
-  };
+  const handleSearchEmail = (email) => setSearchEmail(email);
 
-  const handleAddAccount = () => {
-    setShowAddAccountModal(true);
-  };
+  const handleAddAccount = () => setShowAddAccountModal(true);
 
   const handleTodayFollowUp = async () => {
     changeView("today");
@@ -371,11 +363,8 @@ export default function InboxMain() {
     });
   };
 
-  const handleSchedule = () => {
-    setIsScheduleMode(true);
-  };
+  const handleSchedule = () => setIsScheduleMode(true);
 
-  // ✅ Callback when a message is successfully sent
   const handleMessageSent = (conversationId) => {
     if (activeView === "today") {
       setConversations((prev) =>
@@ -385,29 +374,38 @@ export default function InboxMain() {
         setSelectedConversation(null);
       }
     } else {
-      // ✅ Force refresh after sending
       fetchConversations(true);
-      fetchAccounts(); // Update unread counts
+      fetchAccounts();
     }
   };
 
-  // ✅ Handle when schedule modal closes successfully
   const handleScheduleSuccess = () => {
     setShowScheduleModal(false);
     setIsScheduleMode(false);
     setSelectedConversations([]);
-
-    if (activeView === "today") {
-      fetchTodayFollowUps();
-    }
+    if (activeView === "today") fetchTodayFollowUps();
   };
 
+  // ── Month filter handler: update state → useEffect handles refetch ──
+  const handleMonthFilterChange = (value) => {
+    setMonthFilter(value);
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────
   return (
     <div className="flex h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 overflow-hidden relative">
-      {/* Animated Background Elements */}
+      {/* Animated background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl animate-pulse" style={{animationDuration: '4s'}}></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-teal-200/20 rounded-full blur-3xl animate-pulse" style={{animationDuration: '6s', animationDelay: '1s'}}></div>
+        <div
+          className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl animate-pulse"
+          style={{ animationDuration: "4s" }}
+        />
+        <div
+          className="absolute bottom-0 right-1/4 w-96 h-96 bg-teal-200/20 rounded-full blur-3xl animate-pulse"
+          style={{ animationDuration: "6s", animationDelay: "1s" }}
+        />
       </div>
 
       <ModernSidebar
@@ -433,6 +431,8 @@ export default function InboxMain() {
           activeView={activeView}
           activeFilters={filters}
           onRefresh={handleRefreshInbox}
+          monthFilter={monthFilter}
+          onMonthFilterChange={handleMonthFilterChange}
         />
 
         {isScheduleMode && (
@@ -480,7 +480,7 @@ export default function InboxMain() {
               selectedConversations={selectedConversations}
               setSelectedConversations={setSelectedConversations}
               refreshKey={refreshKey}
-              onUnreadChange={() => setRefreshKey(prev => prev + 1)}
+              onUnreadChange={() => setRefreshKey((prev) => prev + 1)}
             />
           </div>
 

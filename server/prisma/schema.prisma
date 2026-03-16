@@ -145,6 +145,7 @@ model EmailMessage {
   // ✅ THIS is what enables findUnique({ emailAccountId_messageId })
   @@unique([emailAccountId, messageId])
   @@index([emailAccountId, conversationId])
+  @@index([emailAccountId, sentAt])
 }
 
 model Attachment {
