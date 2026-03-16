@@ -1256,7 +1256,7 @@ export const startFollowupCleanupJob = () => {
           sendType: "followup",
           status: "completed",
           parentCampaignId: { not: null },
-          updatedAt: { lte: oneDayAgo }  // completed more than 1 day ago
+          createdAt: { lte: oneDayAgo }  // completed more than 1 day ago
         },
         select: {
           id: true,
