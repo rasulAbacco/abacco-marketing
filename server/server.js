@@ -16,6 +16,7 @@ import { startCampaignScheduler } from "./src/utils/campaignScheduler.js";
 import analyticsRoutes from "./src/routes/analytics.routes.js";
 import { sendBulkCampaign } from "./src/services/campaignMailer.service.js";
 import { startFollowupCleanupJob } from "./src/controllers/campaigns.controller.js";
+import accountGroupsRoutes from "./src/routes/inbox/accountGroups.js"; // ✅ NEW
 
 const app = express();
 const prisma = new PrismaClient();
@@ -49,6 +50,7 @@ app.use("/api/pitches", pitchRoutes);
 app.use("/api/leads", leadsRoutes);
 app.use("/api/campaigns", campaignsRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/account-groups", accountGroupsRoutes); // ✅ NEW
 
 // --------------------
 // Health check

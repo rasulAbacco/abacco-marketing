@@ -257,13 +257,20 @@ router.post("/send", upload.array("attachments"), async (req, res) => {
       // 🔥 CLEAR INBOX CACHE AFTER SENDING MAIL
       try {
         const userId = account.userId;
+        const MONTH_FILTERS = ["current", "last", "three"];
+        const FOLDERS = ["inbox", "sent", "spam", "trash", "draft"];
 
-        cache.del(`inbox:${userId}:${emailAccountId}:inbox`);
-        cache.del(`inbox:${userId}:${emailAccountId}:sent`);
-        cache.del(`inbox:${userId}:${emailAccountId}:spam`);
-        cache.del(`inbox:${userId}:${emailAccountId}:trash`);
+        // Clear all folder + monthFilter combinations (matches inbox.js key format)
+        FOLDERS.forEach((folder) => {
+          MONTH_FILTERS.forEach((mf) => {
+            cache.del(`inbox:${userId}:${emailAccountId}:${folder}:${mf}`);
+          });
+        });
 
-        console.log("🧹 Cache cleared for inbox");
+        // Also clear accounts cache so unread counts refresh on next load
+        cache.del(`accounts:${userId}`);
+
+        console.log("🧹 Cache cleared for all folders/filters");
       } catch (e) {
         console.warn("Cache clear failed:", e.message);
       }

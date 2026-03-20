@@ -1,4 +1,7 @@
 // ✅ EmailList.jsx - FIXED VERSION
+// Fix 1: monthFilter passed in API call + default changed to "three" (Last 3 Months)
+// Fix 2: Auto-retry on empty initial load (server IMAP sync may not have finished yet)
+// Fix 3: Per-row delete (trash) button on hover
 import React, { useState, useEffect, useRef } from "react";
 import { Mail, ChevronDown, ChevronUp, Users, Globe, Zap, MoreVertical, Trash2, Check, X, Flag } from "lucide-react";
 import { api } from "../../utils/api"; 
@@ -19,19 +22,20 @@ export default function ConversationList({
   setConversations,
   refreshKey,
   onUnreadChange,
+  // Default "three" (Last 3 Months) so existing emails always show on first load.
+  // "current" (Current Month) only shows emails from the 1st of this month — if
+  // no emails arrived this month yet, the list looks empty even though emails exist.
+  monthFilter = "three",
 }) {
   const [sortBy, setSortBy] = useState("sender");
   const [sortOrder, setSortOrder] = useState("desc");
 
-  // ✅ FIX: Separate initial loading from background refresh
-  // `loading` = true only on first load (shows spinner)
-  // `refreshing` = true on background polls (silent, no UI flash)
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]       = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [selectAll, setSelectAll] = useState(false);
-  const [selectionMode, setSelectionMode] = useState(false);
+  const [showMoreMenu, setShowMoreMenu]           = useState(false);
+  const [selectAll, setSelectAll]                 = useState(false);
+  const [selectionMode, setSelectionMode]         = useState(false);
   const [collapsedSections, setCollapsedSections] = useState({});
   const [flaggedConversations, setFlaggedConversations] = useState(() => {
     try {
@@ -39,36 +43,34 @@ export default function ConversationList({
       return stored ? JSON.parse(stored) : {};
     } catch { return {}; }
   });
-  const [hoveredConversation, setHoveredConversation] = useState(null);
-  const moreMenuRef = useRef(null);
+  const [hoveredConversation, setHoveredConversation]   = useState(null);
+  const [deletingConversationId, setDeletingConversationId] = useState(null);
+  const [newMailCount, setNewMailCount] = useState(0); // toast: how many new emails arrived
 
-  // Track whether we've done an initial fetch for the current account+folder
-  const lastFetchKey = useRef(null);
+  const moreMenuRef    = useRef(null);
+  const lastFetchKey   = useRef(null);
+  // How many times we've auto-retried after an empty initial load
+  const retryCountRef  = useRef(0);
+  const retryTimerRef  = useRef(null);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (moreMenuRef.current && !moreMenuRef.current.contains(event.target)) {
         setShowMoreMenu(false);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const fetchEmails = async (isBackground = false) => {
-    if (!selectedAccount?.id) {
-      console.warn("No account ID available");
-      return;
-    }
+    if (!selectedAccount?.id) return;
 
-    // ✅ Only show spinner on initial/manual fetch, not background polls
-    if (!isBackground) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
+    // Only show the full-page loading spinner on a TRUE first load
+    // (i.e. no conversations are showing yet). Background polls and
+    // refreshKey-triggered re-fetches must NEVER blank the list.
+    if (!isBackground && conversations.length === 0) setLoading(true);
+    else setRefreshing(true);
 
     try {
       const res = await api.get(
@@ -76,48 +78,95 @@ export default function ConversationList({
         {
           params: {
             folder: selectedFolder,
+            monthFilter,   // ← always send the active filter
           },
         }
       );
 
-      setConversations(res.data.data || []);
+      const incoming = res.data.data;
+
+      if (isBackground) {
+        // ── BACKGROUND POLL ──────────────────────────────────────────────────
+        // Never replace a non-empty list with an empty response.
+        // The server may return [] while an IMAP sync is still running —
+        // keeping the existing list avoids the blank-screen flash.
+        if (Array.isArray(incoming) && incoming.length > 0) {
+          // Detect genuinely new conversations (not in current list)
+          const currentIds = new Set(conversations.map(c => c.conversationId));
+          const newOnes = incoming.filter(c => !currentIds.has(c.conversationId));
+          if (newOnes.length > 0) {
+            setNewMailCount(newOnes.length);
+            // Auto-dismiss toast after 4s
+            setTimeout(() => setNewMailCount(0), 4000);
+          }
+          setConversations(incoming);
+          retryCountRef.current = 0; // reset retry counter once we have data
+        }
+        // If empty on background → silently keep whatever is already showing
+
+      } else {
+        // ── INITIAL / MANUAL FETCH ───────────────────────────────────────────
+        if (Array.isArray(incoming) && incoming.length > 0) {
+          // Got real data — show it and cancel any pending retry
+          setConversations(incoming);
+          retryCountRef.current = 0;
+          if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        } else {
+          // Empty response on first load — the server's IMAP sync may not have
+          // finished writing to the DB yet.  Schedule up to 3 silent retries
+          // (at 4 s, 8 s, 14 s) so emails appear automatically without the
+          // user having to click Refresh.
+          setConversations([]);
+
+          if (retryCountRef.current < 3) {
+            const delay = [4000, 8000, 14000][retryCountRef.current];
+            retryCountRef.current += 1;
+            console.log(`📭 Empty inbox — auto-retry #${retryCountRef.current} in ${delay / 1000}s`);
+            if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = setTimeout(() => fetchEmails(true), delay);
+          }
+        }
+      }
     } catch (err) {
       console.error("Failed to fetch emails", err);
-      // On background refresh errors, keep existing data — don't wipe list
-      if (!isBackground) {
-        setConversations([]);
-      }
+      if (!isBackground) setConversations([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
+  // Re-fetch whenever account, folder, refreshKey, or monthFilter changes
   useEffect(() => {
     if (!selectedAccount?.id || !selectedFolder) return;
 
-    const fetchKey = `${selectedAccount.id}:${selectedFolder}:${refreshKey}`;
+    // Cancel any pending retry from a previous account/folder
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryCountRef.current = 0;
+
     const isInitial = lastFetchKey.current !== `${selectedAccount.id}:${selectedFolder}`;
     lastFetchKey.current = `${selectedAccount.id}:${selectedFolder}`;
 
-    // Show spinner only on account/folder change or manual refresh (refreshKey changed)
-    fetchEmails(!isInitial);
+    fetchEmails(!isInitial); // spinner on account/folder change; silent on refreshKey/filter
 
-    // ✅ FIX: Poll every 20s (matches server cache TTL of 15s) so new emails
-    // appear within one poll cycle after the background sync completes.
+    // Background poll every 20 s
     const interval = setInterval(() => {
-      fetchEmails(true); // background = silent, no spinner
+      fetchEmails(true);
     }, 20000);
 
-    return () => clearInterval(interval);
-  }, [refreshKey, selectedAccount?.id, selectedFolder]);
+    return () => {
+      clearInterval(interval);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, [refreshKey, selectedAccount?.id, selectedFolder, monthFilter]);
 
   useEffect(() => {
     console.log(`📊 EmailList rendered with ${conversations.length} conversations`);
   }, [conversations]);
 
-  // ✅ FIX: Only block render on initial load, not background polls
-  if (loading) return <p className="p-4 text-center text-green-700 mt-20">Loading Mails...</p>;
+  // Only block render on a TRUE initial load (list is empty AND we're loading)
+  // Background polls must never blank the existing conversation list.
+  if (loading && conversations.length === 0) return <p className="p-4 text-center text-green-700 mt-20">Loading Mails...</p>;
 
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -319,6 +368,39 @@ export default function ConversationList({
     }
   };
 
+  // ── FIX 2: Single-row delete → moves to trash ───────────────────────────────
+  const handleDeleteSingleConversation = async (e, conversation) => {
+    e.stopPropagation(); // Don't open the conversation
+    const { conversationId } = conversation;
+
+    setDeletingConversationId(conversationId);
+    try {
+      await api.patch(`${API_BASE_URL}/api/inbox/hide-inbox-conversation`, {
+        conversationId,
+        accountId: selectedAccount.id,
+      });
+
+      // Optimistically remove from list
+      setConversations((prev) =>
+        prev.filter((c) => c.conversationId !== conversationId)
+      );
+
+      // If the deleted conversation was open, deselect it
+      if (selectedConversation?.conversationId === conversationId) {
+        onConversationSelect(null);
+      }
+
+      if (onUnreadChange) {
+        onUnreadChange();
+      }
+    } catch (err) {
+      console.error("Single delete failed:", err);
+      alert("Failed to move conversation to trash");
+    } finally {
+      setDeletingConversationId(null);
+    }
+  };
+
   const handleConversationSelect = (conversation) => {
     if (selectionMode) {
       toggleSelectConversation(conversation);
@@ -415,6 +497,13 @@ export default function ConversationList({
 
   return (
     <div className="flex flex-col h-full bg-white/90 backdrop-blur-sm">
+      {/* ── New mail toast ── */}
+      {newMailCount > 0 && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium animate-pulse">
+          <span>📬 {newMailCount} new {newMailCount === 1 ? "email" : "emails"} arrived</span>
+          <button onClick={() => setNewMailCount(0)} className="ml-2 opacity-70 hover:opacity-100">✕</button>
+        </div>
+      )}
       {/* Header */}
       <div className="p-2 border-b border-emerald-200/50 bg-gradient-to-r from-white to-emerald-50/30">
         <div className="flex items-center justify-between ">
@@ -422,7 +511,7 @@ export default function ConversationList({
             <h2 className="text-md font-bold bg-gradient-to-r from-emerald-600 to-green-800 bg-clip-text text-transparent">
               {conversations.length} {conversations.length === 1 ? "conversation" : "conversations"}
             </h2>
-            {/* ✅ Subtle background refresh indicator — no spinner blocking the list */}
+            {/* Subtle background refresh indicator */}
             {refreshing && (
               <span className="text-[10px] text-emerald-500 animate-pulse font-medium">
                 ● syncing
@@ -562,6 +651,7 @@ export default function ConversationList({
                 const isChecked = selectedConversations.some((c) => c.conversationId === conversation.conversationId);
                 const isFlagged = !!flaggedConversations[conversationId];
                 const isHovered = hoveredConversation === conversationId;
+                const isDeleting = deletingConversationId === conversationId;
 
                 return (
                   <div
@@ -570,7 +660,9 @@ export default function ConversationList({
                     onMouseEnter={() => setHoveredConversation(conversationId)}
                     onMouseLeave={() => setHoveredConversation(null)}
                     className={`px-4 py-3 border-b border-emerald-100/50 cursor-pointer transition-all relative ${
-                      isFlagged
+                      isDeleting
+                        ? "opacity-40 pointer-events-none"
+                        : isFlagged
                         ? "bg-yellow-50 border-l-4 border-yellow-400"
                         : isSelected
                         ? "bg-gradient-to-r from-emerald-50 to-teal-50 border-l-4 border-emerald-600 shadow-sm"
@@ -618,8 +710,10 @@ export default function ConversationList({
                               <span className="flex-shrink-0 w-2 h-2 bg-emerald-600 rounded-full shadow-sm"></span>
                             )}
                           </div>
+
+                          {/* ── Right-side action buttons (flag + delete + date) ── */}
                           <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-                            {/* Flag button - shows on hover or when flagged */}
+                            {/* Flag button */}
                             <button
                               onClick={(e) => toggleFlag(e, conversationId)}
                               title={isFlagged ? "Remove flag" : "Flag this conversation"}
@@ -633,6 +727,20 @@ export default function ConversationList({
                             >
                               <Flag className="w-3.5 h-3.5" fill={isFlagged ? "currentColor" : "none"} />
                             </button>
+
+                            {/* ── FIX 2: Per-row Delete (Trash) button ── */}
+                            <button
+                              onClick={(e) => handleDeleteSingleConversation(e, conversation)}
+                              title="Move to trash"
+                              className={`transition-all duration-150 rounded p-0.5 ${
+                                isHovered
+                                  ? "opacity-100 text-slate-400 hover:text-red-500 hover:bg-red-50"
+                                  : "opacity-0 pointer-events-none"
+                              }`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+
                             <span className="text-xs text-slate-500 font-medium">
                               {formatDate(conversation.lastDate)}
                             </span>

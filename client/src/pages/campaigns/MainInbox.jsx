@@ -4,6 +4,7 @@ import InboxHeader from "./components/Inboxheader.jsx";
 import ConversationList from "./components/EmailList.jsx";
 import MessageView from "./components/EmailPreview.jsx";
 import AddAccountManager from "./components/AddEmailAccount.jsx";
+import GroupSelectModal from "./components/GroupSelectModal.jsx";
 import ScheduleModal from "./campaignPages/Schedulemodal.jsx";
 import { api } from "../utils/api.js";
 
@@ -13,10 +14,20 @@ export default function InboxMain() {
   // ── Sidebar ──────────────────────────────────────────────
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // ── Groups (folders) ─────────────────────────────────────
+  const [accountGroups, setAccountGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
+
+  // ── Add-account flow ─────────────────────────────────────
+  // Step 1: show GroupSelectModal  (showGroupPicker = true)
+  // Step 2: show AddAccountManager (showAddAccountModal = true, pendingGroup set)
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
+  const [showAddAccountModal, setShowAddAccountModal] = useState(false);
+  const [pendingGroup, setPendingGroup] = useState(null); // { groupId, groupName }
+
   // ── Accounts ─────────────────────────────────────────────
   const [accounts, setAccounts] = useState([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
-  const [showAddAccountModal, setShowAddAccountModal] = useState(false);
 
   // ── Selection ────────────────────────────────────────────
   const [selectedAccount, setSelectedAccount] = useState(null);
@@ -24,21 +35,15 @@ export default function InboxMain() {
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // ── Active view (persisted across reloads) ───────────────
+  // ── Active view ───────────────────────────────────────────
   const [activeView, setActiveView] = useState(
     () => localStorage.getItem("activeView") || "inbox"
   );
 
-  // ── Month filter ─────────────────────────────────────────
-  // Supported values: "current" | "last" | "three"
-  // Default: current month to keep initial load fast.
+  // ── Month filter ──────────────────────────────────────────
   const [monthFilter, setMonthFilter] = useState("current");
 
-  // ── Misc handlers ────────────────────────────────────────
-  const handleRefreshInbox = () => setRefreshKey((prev) => prev + 1);
-  const handleRefreshAll   = () => setRefreshKey((prev) => prev + 1);
-
-  // ── Filters ──────────────────────────────────────────────
+  // ── Filters ───────────────────────────────────────────────
   const [filters, setFilters] = useState({
     leadStatus: "",
     sender: "",
@@ -53,10 +58,10 @@ export default function InboxMain() {
     country: "",
   });
 
-  // ── Search ───────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────
   const [searchEmail, setSearchEmail] = useState("");
 
-  // ── Mobile / schedule ────────────────────────────────────
+  // ── Mobile / schedule ─────────────────────────────────────
   const [showMobileConversations, setShowMobileConversations] = useState(false);
   const [isScheduleMode, setIsScheduleMode] = useState(false);
   const [selectedConversations, setSelectedConversations] = useState([]);
@@ -66,69 +71,35 @@ export default function InboxMain() {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ── Polling ──────────────────────────────────────────────
+  // ── Polling ───────────────────────────────────────────────
   const lastFetchTimeRef = useRef(Date.now());
   const pollingIntervalRef = useRef(null);
 
-  // ─────────────────────────────────────────────────────────
-  // Fetch accounts on mount
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // MOUNT
+  // ──────────────────────────────────────────────────────────
   useEffect(() => {
+    fetchGroups();
     fetchAccounts();
   }, []);
 
-  // ─────────────────────────────────────────────────────────
-  // Auto-refresh every 15 s when an account is selected
-  // Re-run whenever account, folder, or monthFilter changes
-  // ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedAccount?.id) return;
-
-    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-
-    pollingIntervalRef.current = setInterval(() => {
-      console.log("🔄 Auto-refresh: Fetching new conversations...");
-      fetchConversations(true);
-    }, 15000);
-
-    return () => {
-      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-    };
-  }, [selectedAccount?.id, selectedFolder, monthFilter]);
-
-  // ─────────────────────────────────────────────────────────
-  // Primary fetch: fires once when account / folder /
-  // monthFilter changes. No redundant 3-second follow-up —
-  // the 15-second poller above handles background refreshes.
-  // ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedAccount?.id) return;
-    fetchConversations();
-  }, [selectedAccount?.id, selectedFolder, monthFilter]);
-
-  // ─────────────────────────────────────────────────────────
-  // Reactive fetch: fires when filters, search, or activeView
-  // changes. Account/folder/monthFilter changes are handled
-  // by the dedicated effect above to avoid duplicate fetches.
-  // ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedAccount) return;
-
-    if (activeView === "today") {
-      fetchTodayFollowUps();
-      return;
+  // ──────────────────────────────────────────────────────────
+  // FETCH GROUPS
+  // ──────────────────────────────────────────────────────────
+  const fetchGroups = async () => {
+    try {
+      const res = await api.get(`${API_BASE_URL}/api/account-groups`);
+      const data = Array.isArray(res.data?.data) ? res.data.data : [];
+      setAccountGroups(data);
+    } catch (err) {
+      console.error("Failed to fetch account groups:", err);
+      setAccountGroups([]);
     }
+  };
 
-    if (searchEmail && searchEmail.trim() !== "") {
-      fetchSearchResults();
-    } else {
-      fetchConversations();
-    }
-  }, [activeView, filters, searchEmail]);
-
-  // ─────────────────────────────────────────────────────────
-  // FETCH ACCOUNTS
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // FETCH ACCOUNTS  (include groupId returned from API)
+  // ──────────────────────────────────────────────────────────
   const fetchAccounts = async () => {
     try {
       setLoadingAccounts(true);
@@ -166,51 +137,60 @@ export default function InboxMain() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────
-  // FETCH SEARCH RESULTS
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // POLLING
+  // ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedAccount?.id) return;
+    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+    pollingIntervalRef.current = setInterval(() => {
+      fetchConversations(true);
+    }, 15000);
+    return () => { if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current); };
+  }, [selectedAccount?.id, selectedFolder, monthFilter]);
+
+  useEffect(() => {
+    if (!selectedAccount?.id) return;
+    fetchConversations();
+  }, [selectedAccount?.id, selectedFolder, monthFilter]);
+
+  useEffect(() => {
+    if (!selectedAccount) return;
+    if (activeView === "today") { fetchTodayFollowUps(); return; }
+    if (searchEmail?.trim()) fetchSearchResults();
+    else fetchConversations();
+  }, [activeView, filters, searchEmail]);
+
+  // ──────────────────────────────────────────────────────────
+  // FETCH SEARCH
+  // ──────────────────────────────────────────────────────────
   const fetchSearchResults = async () => {
     if (!searchEmail?.trim() || !selectedAccount) return;
-
     try {
       setLoading(true);
       const res = await api.get(`${API_BASE_URL}/api/inbox/search`, {
         params: { query: searchEmail, accountId: selectedAccount.id },
       });
-
       const rawMessages = res.data?.data || [];
       const uniqueConversations = new Map();
-
       rawMessages.forEach((msg) => {
         const convId = msg.conversationId;
-        if (
-          !uniqueConversations.has(convId) ||
-          new Date(msg.sentAt) > new Date(uniqueConversations.get(convId).sentAt)
-        ) {
+        if (!uniqueConversations.has(convId) || new Date(msg.sentAt) > new Date(uniqueConversations.get(convId).sentAt)) {
           uniqueConversations.set(convId, msg);
         }
       });
-
-      const formattedResults = Array.from(uniqueConversations.values()).map(
-        (msg) => ({
-          conversationId: msg.conversationId,
-          subject: msg.subject || "(No Subject)",
-          initiatorEmail: msg.fromEmail,
-          lastSenderEmail: msg.fromEmail,
-          displayEmail:
-            msg.direction === "sent"
-              ? `To: ${msg.toEmail?.split(",")[0]}`
-              : msg.fromEmail,
-          lastDate: msg.sentAt,
-          lastBody: msg.body
-            ? msg.body.replace(/<[^>]*>/g, "").substring(0, 100)
-            : "",
-          unreadCount: 0,
-          messageCount: 1,
-          isStarred: false,
-        })
-      );
-
+      const formattedResults = Array.from(uniqueConversations.values()).map((msg) => ({
+        conversationId: msg.conversationId,
+        subject: msg.subject || "(No Subject)",
+        initiatorEmail: msg.fromEmail,
+        lastSenderEmail: msg.fromEmail,
+        displayEmail: msg.direction === "sent" ? `To: ${msg.toEmail?.split(",")[0]}` : msg.fromEmail,
+        lastDate: msg.sentAt,
+        lastBody: msg.body ? msg.body.replace(/<[^>]*>/g, "").substring(0, 100) : "",
+        unreadCount: 0,
+        messageCount: 1,
+        isStarred: false,
+      }));
       setConversations(formattedResults);
     } catch (error) {
       console.error("Search failed:", error);
@@ -220,97 +200,97 @@ export default function InboxMain() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────
-  // FETCH CONVERSATIONS  ← monthFilter is included here
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // FETCH CONVERSATIONS
+  // ──────────────────────────────────────────────────────────
   const fetchConversations = async (forceRefresh = false) => {
     if (!selectedAccount) return;
-
     try {
       setLoading(true);
-
-      const params = {
-        folder: selectedFolder,
-        monthFilter,                              // ← NEW
-        _t: forceRefresh ? Date.now() : undefined,
-      };
-
-      if (filters.leadStatus)    params.leadStatus    = filters.leadStatus;
-      if (filters.country)       params.country       = filters.country;
-      if (filters.sender)        params.sender        = filters.sender;
-      if (filters.recipient)     params.recipient     = filters.recipient;
-      if (filters.subject)       params.subject       = filters.subject;
-      if (filters.dateFrom)      params.dateFrom      = filters.dateFrom;
-      if (filters.dateTo)        params.dateTo        = filters.dateTo;
-      if (filters.hasAttachment) params.hasAttachment = true;
-      if (filters.isUnread)      params.isUnread      = true;
-      if (filters.isStarred)     params.isStarred     = true;
-
+      const params = { folder: selectedFolder, month: monthFilter };
       const res = await api.get(
-        `${API_BASE_URL}/api/inbox/conversations/${selectedAccount.id}`,
+        `${API_BASE_URL}/api/inbox/accounts/${selectedAccount.id}/conversations`,
         { params }
       );
-
-      const newConversations = res.data?.data || [];
-
-      if (conversations.length !== newConversations.length) {
-        console.log(
-          `📊 Conversation count: ${conversations.length} → ${newConversations.length} (filter: ${monthFilter})`
-        );
-      }
-
-      setConversations(newConversations);
-      lastFetchTimeRef.current = Date.now();
-
-      if (forceRefresh) fetchAccounts();
-    } catch (error) {
-      console.error("Failed to fetch conversations:", error);
+      setConversations(res.data?.data || []);
+    } catch (err) {
+      console.error("Failed to fetch conversations:", err);
       setConversations([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
   // FETCH TODAY FOLLOW-UPS
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
   const fetchTodayFollowUps = async () => {
+    if (!selectedAccount) return;
     try {
       setLoading(true);
-      const res = await api.get(`${API_BASE_URL}/api/scheduled-messages/today`);
-
-      const formatted = res.data.map((msg) => {
-        let actualEmail = msg.toEmail;
-        const match = msg.toEmail.match(/<(.+?)>/);
-        if (match?.[1]) actualEmail = match[1];
-
-        return {
-          conversationId: msg.conversationId,
-          subject: msg.subject || "(No subject)",
-          displayName: actualEmail,
-          displayEmail: actualEmail,
-          primaryRecipient: actualEmail,
-          lastDate: msg.sendAt,
-          lastBody: "(Scheduled follow-up)",
-          unreadCount: 0,
-          isScheduled: true,
-          scheduledMessageId: msg.id,
-          scheduledMessageData: msg,
-        };
+      const res = await api.get(`${API_BASE_URL}/api/inbox/today-follow-ups`, {
+        params: { accountId: selectedAccount.id },
       });
-
+      const msgs = res.data?.data || [];
+      const formatted = msgs.map((msg) => ({
+        conversationId: msg.conversationId || msg.id,
+        subject: msg.subject || "(No Subject)",
+        initiatorEmail: msg.toEmail,
+        lastSenderEmail: msg.toEmail,
+        displayEmail: `To: ${msg.toEmail}`,
+        lastDate: msg.sendAt,
+        lastBody: msg.bodyHtml ? msg.bodyHtml.replace(/<[^>]*>/g, "").substring(0, 100) : "",
+        unreadCount: 0,
+        messageCount: 1,
+        isStarred: false,
+        isScheduled: true,
+        scheduledMessageId: msg.id,
+        scheduledMessageData: msg,
+      }));
       setConversations(formatted);
     } catch (err) {
-      console.error("❌ Failed to fetch today follow-ups", err);
+      console.error("Failed to fetch today follow-ups:", err);
       setConversations([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // ─────────────────────────────────────────────────────────
-  // HANDLERS
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // ADD-ACCOUNT FLOW
+  // ──────────────────────────────────────────────────────────
+  /**
+   * Called from sidebar:
+   *   - null              → show group picker first
+   *   - { groupId, groupName } → skip picker, go straight to add-account
+   */
+  const handleAddAccount = (groupInfo) => {
+    if (groupInfo) {
+      // Came from group context menu (groupId already known)
+      setPendingGroup(groupInfo);
+      setShowAddAccountModal(true);
+    } else {
+      // Came from header "Add" button → show picker
+      setShowGroupPicker(true);
+    }
+  };
+
+  const handleGroupPickerConfirm = (groupInfo) => {
+    setShowGroupPicker(false);
+    setPendingGroup(groupInfo);
+    setShowAddAccountModal(true);
+  };
+
+  const handleAddAccountClose = () => {
+    setShowAddAccountModal(false);
+    setPendingGroup(null);
+    fetchAccounts();
+    fetchGroups();
+  };
+
+  // ──────────────────────────────────────────────────────────
+  // OTHER HANDLERS
+  // ──────────────────────────────────────────────────────────
   const changeView = (view) => {
     setActiveView(view);
     localStorage.setItem("activeView", view);
@@ -333,9 +313,19 @@ export default function InboxMain() {
     changeView("inbox");
   };
 
-  const handleConversationSelect = (conversation) => {
-    setSelectedConversation(conversation);
+  const handleGroupSelect = (groupId) => {
+    setSelectedGroupId(groupId);
+    // When a group is selected, auto-select first account in that group
+    const groupAccounts = accounts.filter((a) => a.groupId === groupId);
+    if (groupAccounts.length > 0) {
+      setSelectedAccount(groupAccounts[0]);
+      setSelectedFolder("inbox");
+      setSelectedConversation(null);
+      changeView("inbox");
+    }
   };
+
+  const handleConversationSelect = (conversation) => setSelectedConversation(conversation);
 
   const handleFilterApply = (newFilters) => {
     changeView("inbox");
@@ -344,35 +334,17 @@ export default function InboxMain() {
 
   const handleSearchEmail = (email) => setSearchEmail(email);
 
-  const handleAddAccount = () => setShowAddAccountModal(true);
-
   const handleTodayFollowUp = async () => {
     changeView("today");
-    setFilters({
-      leadStatus: "",
-      sender: "",
-      recipient: "",
-      subject: "",
-      tags: [],
-      dateFrom: "",
-      dateTo: "",
-      hasAttachment: false,
-      isUnread: false,
-      isStarred: false,
-      country: "",
-    });
+    setFilters({ leadStatus: "", sender: "", recipient: "", subject: "", tags: [], dateFrom: "", dateTo: "", hasAttachment: false, isUnread: false, isStarred: false, country: "" });
   };
 
   const handleSchedule = () => setIsScheduleMode(true);
 
   const handleMessageSent = (conversationId) => {
     if (activeView === "today") {
-      setConversations((prev) =>
-        prev.filter((c) => c.conversationId !== conversationId)
-      );
-      if (selectedConversation?.conversationId === conversationId) {
-        setSelectedConversation(null);
-      }
+      setConversations((prev) => prev.filter((c) => c.conversationId !== conversationId));
+      if (selectedConversation?.conversationId === conversationId) setSelectedConversation(null);
     } else {
       fetchConversations(true);
       fetchAccounts();
@@ -386,28 +358,20 @@ export default function InboxMain() {
     if (activeView === "today") fetchTodayFollowUps();
   };
 
-  // ── Month filter handler: update state → useEffect handles refetch ──
-  const handleMonthFilterChange = (value) => {
-    setMonthFilter(value);
-  };
+  const handleMonthFilterChange = (value) => setMonthFilter(value);
 
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
   // RENDER
-  // ─────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
   return (
     <div className="flex h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 overflow-hidden relative">
-      {/* Animated background */}
+      {/* Background blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div
-          className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: "4s" }}
-        />
-        <div
-          className="absolute bottom-0 right-1/4 w-96 h-96 bg-teal-200/20 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: "6s", animationDelay: "1s" }}
-        />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: "4s" }} />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-teal-200/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: "6s", animationDelay: "1s" }} />
       </div>
 
+      {/* Sidebar */}
       <ModernSidebar
         accounts={accounts}
         selectedAccount={selectedAccount}
@@ -418,8 +382,14 @@ export default function InboxMain() {
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={setSidebarCollapsed}
         unreadRefreshKey={refreshKey}
+        refreshKey={refreshKey}
+        accountGroups={accountGroups}
+        onGroupsChange={fetchGroups}
+        selectedGroupId={selectedGroupId}
+        onGroupSelect={handleGroupSelect}
       />
 
+      {/* Main area */}
       <div className="flex-1 flex flex-col overflow-hidden relative z-10">
         <InboxHeader
           selectedAccount={selectedAccount}
@@ -430,16 +400,14 @@ export default function InboxMain() {
           onScheduleClick={handleSchedule}
           activeView={activeView}
           activeFilters={filters}
-          onRefresh={handleRefreshInbox}
+          onRefresh={() => setRefreshKey((prev) => prev + 1)}
           monthFilter={monthFilter}
           onMonthFilterChange={handleMonthFilterChange}
         />
 
         {isScheduleMode && (
           <div className="px-4 py-3 border-b bg-gradient-to-r from-emerald-50 to-teal-50 flex items-center justify-between shadow-sm">
-            <span className="text-sm text-emerald-700 font-medium">
-              {selectedConversations.length} selected
-            </span>
+            <span className="text-sm text-emerald-700 font-medium">{selectedConversations.length} selected</span>
             <div className="flex gap-2">
               <button
                 disabled={selectedConversations.length === 0}
@@ -449,10 +417,7 @@ export default function InboxMain() {
                 Schedule
               </button>
               <button
-                onClick={() => {
-                  setIsScheduleMode(false);
-                  setSelectedConversations([]);
-                }}
+                onClick={() => { setIsScheduleMode(false); setSelectedConversations([]); }}
                 className="px-4 py-1.5 border border-emerald-300 rounded-lg text-emerald-700 hover:bg-emerald-50 font-medium transition-all"
               >
                 Cancel
@@ -462,11 +427,7 @@ export default function InboxMain() {
         )}
 
         <div className="flex-1 flex overflow-hidden">
-          <div
-            className={`${
-              selectedConversation ? "hidden lg:flex" : "flex"
-            } w-full lg:w-96 flex-col`}
-          >
+          <div className={`${selectedConversation ? "hidden lg:flex" : "flex"} w-full lg:w-96 flex-col`}>
             <ConversationList
               key={`${selectedAccount?.id}-${selectedFolder}`}
               conversations={conversations}
@@ -484,11 +445,7 @@ export default function InboxMain() {
             />
           </div>
 
-          <div
-            className={`${
-              selectedConversation ? "flex" : "hidden lg:flex"
-            } flex-1 flex-col`}
-          >
+          <div className={`${selectedConversation ? "flex" : "hidden lg:flex"} flex-1 flex-col`}>
             <MessageView
               selectedAccount={selectedAccount}
               selectedConversation={selectedConversation}
@@ -500,13 +457,22 @@ export default function InboxMain() {
         </div>
       </div>
 
+      {/* ── Step 1: Group picker ── */}
+      {showGroupPicker && (
+        <GroupSelectModal
+          groups={accountGroups}
+          onConfirm={handleGroupPickerConfirm}
+          onClose={() => setShowGroupPicker(false)}
+          onGroupsChange={fetchGroups}
+        />
+      )}
+
+      {/* ── Step 2: Add account (with group pre-selected) ── */}
       {showAddAccountModal && (
         <AddAccountManager
-          onClose={() => {
-            setShowAddAccountModal(false);
-            fetchAccounts();
-          }}
+          onClose={handleAddAccountClose}
           onAccountAdded={fetchAccounts}
+          pendingGroup={pendingGroup}   // pass to AddEmailAccount so it can store groupId
         />
       )}
 

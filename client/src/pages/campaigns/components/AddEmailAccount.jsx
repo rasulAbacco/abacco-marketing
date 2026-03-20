@@ -5,7 +5,7 @@ import { api } from "../../utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-export default function AddAccountManager({ onClose, onAccountAdded }) {
+export default function AddAccountManager({ onClose, onAccountAdded, pendingGroup }) {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [form, setForm] = useState({
@@ -79,6 +79,7 @@ const addAccount = async (e) => {
       ...form,
       imapUser: form.imapUser || form.email,
       smtpUser: form.smtpUser || form.email,
+      ...(pendingGroup?.groupId ? { groupId: pendingGroup.groupId } : {}), // ✅ NEW
     };
 
     console.log("Sending:", formData); // 🔥 debug
@@ -257,6 +258,18 @@ const logoutAccount = async () => {
               </svg>
             </button>
           </div>
+
+          {/* ✅ Group banner — shows which group this account will be added to */}
+          {pendingGroup && (
+            <div className="mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+              </svg>
+              <p className="text-sm text-emerald-700">
+                Adding to group: <span className="font-bold">{pendingGroup.groupName}</span>
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">

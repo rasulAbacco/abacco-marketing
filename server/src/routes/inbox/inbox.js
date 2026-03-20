@@ -74,11 +74,14 @@ router.get("/accounts/:id/unread", protect, async (req, res) => {
   try {
     const accountId = Number(req.params.id);
 
+    // Count only unread messages in the inbox folder (not spam/trash/sent)
+    // This ensures the sidebar badge reflects true inbox unread count only
     const count = await prisma.emailMessage.count({
       where: {
         emailAccountId: accountId,
         direction: "received",
         isRead: false,
+        folder: "inbox",
       },
     });
 

@@ -64,9 +64,25 @@ model EmailAccount {
   syncStates        SyncState[]
   folders           EmailFolder[]
   Conversation      Conversation[]
+  groupId           Int?
+  group             EmailAccountGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([email])
+}
+
+model EmailAccountGroup {
+  id        Int      @id @default(autoincrement())
+  name      String
+  color     String   @default("#10b981")
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts EmailAccount[]
+
+  @@index([userId])
 }
 
 model User {
@@ -78,14 +94,14 @@ model User {
   jobRole  String  @default("EMP")
   isActive Boolean @default(true) // ✅ Active/Inactive status
 
-  emailAccounts    EmailAccount[]
-  ScheduledMessage ScheduledMessage[]
-  Tag              Tag[]
-  Lead             Lead[]
-
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  Campaign  Campaign[]
+  emailAccounts      EmailAccount[]
+  ScheduledMessage   ScheduledMessage[]
+  Tag                Tag[]
+  Lead               Lead[]
+  emailAccountGroups EmailAccountGroup[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  Campaign           Campaign[]
 }
 
 model Conversation {

@@ -223,6 +223,7 @@ router.post("/", protect, async (req, res) => {
       encryptedPass,
       authType,
       senderName,
+      groupId, // ✅ NEW: Group assignment
     } = req.body;
 
     // 1. Validation
@@ -334,7 +335,8 @@ router.post("/", protect, async (req, res) => {
         authType,
         senderName: senderName?.trim() || null,
         verified: true,
-        user: { connect: { id: req.user.id } }
+        user: { connect: { id: req.user.id } },
+        ...(groupId ? { group: { connect: { id: parseInt(groupId) } } } : {}), // ✅ NEW
       },
     });
 
@@ -548,6 +550,7 @@ router.get("/", protect, async (req, res) => {
         senderName: true,
         verified: true,
         createdAt: true,
+        groupId: true, // ✅ Required for sidebar group grouping
       },
       orderBy: { createdAt: "desc" },
     });
