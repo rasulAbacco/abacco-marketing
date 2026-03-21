@@ -248,7 +248,7 @@ const fetchMessages = async () => {
     setLoading(true);
 
     const res = await api.get(
-      `${API_BASE_URL}/api/inbox/conversations/${selectedConversation.conversationId}/messages`
+      `${API_BASE_URL}/api/inbox/conversations/${encodeURIComponent(selectedConversation.conversationId)}/messages`
     );
 
     if (res.data.success) {
@@ -269,7 +269,7 @@ const fetchMessages = async () => {
     if (!selectedConversation?.conversationId) return;
 
     await api.patch(
-      `${API_BASE_URL}/api/inbox/conversations/${selectedConversation.conversationId}/read`
+      `${API_BASE_URL}/api/inbox/conversations/${encodeURIComponent(selectedConversation.conversationId)}/read`
     );
   };
 
@@ -973,6 +973,34 @@ const fetchTemplates = async () => {
       }
     );
     if (res.data.success) onBack();
+  };
+
+  const handleDeleteSingleMessage = async (messageId, e) => {
+    e.stopPropagation();
+    try {
+      const res = await api.patch(
+        `${API_BASE_URL}/api/inbox/hide-inbox-conversation`,
+        {
+          conversationId: selectedConversation.conversationId,
+          accountId: selectedAccount.id,
+          messageId,
+        }
+      );
+      if (res.data.success) {
+        // Remove the message from local state; if no messages left, go back
+        setMessages((prev) => {
+          const updated = prev.filter((m) => m.id !== messageId);
+          if (updated.length === 0) {
+            onBack();
+          }
+          return updated;
+        });
+        toast.success("Message moved to Trash");
+      }
+    } catch (error) {
+      console.error("❌ Error deleting message:", error);
+      toast.error("Failed to move message to Trash");
+    }
   };
 
   // ============================================================
@@ -1818,6 +1846,13 @@ const fetchTemplates = async () => {
                             {message.attachments?.length > 0 && (
                               <Paperclip className="w-4 h-4 text-gray-400" />
                             )}
+                            <button
+                              onClick={(e) => handleDeleteSingleMessage(message.id, e)}
+                              className="p-1 hover:bg-red-50 rounded transition-colors group"
+                              title="Move to Trash"
+                            >
+                              <Trash2 className="w-4 h-4 text-gray-400 group-hover:text-red-500" />
+                            </button>
                             <button className="p-1 hover:bg-gray-200 rounded transition-colors">
                               {isExpanded ? (
                                 <ChevronUp className="w-5 h-5 text-gray-400" />

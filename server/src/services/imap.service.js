@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import pLimit from "p-limit";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { decrypt } from "../utils/crypto.js";
 
 dotenv.config();
@@ -49,10 +50,22 @@ function deriveConversationId(accountId, parsed) {
   if (!rootId && inReplyTo) {
     rootId = (Array.isArray(inReplyTo) ? inReplyTo[0] : inReplyTo).trim();
   }
-  if (rootId) return `${accountId}:thread:${rootId}`;
 
-  const msgId = parsed.messageId || `uid-${Date.now()}`;
-  return `${accountId}:thread:${msgId}`;
+  // Use root message-ID if found, else this message's own ID.
+  const rawKey = rootId || parsed.messageId || `uid-${Date.now()}`;
+
+  // WHY HASH: raw message IDs contain slashes, angle brackets, colons, and @ signs
+  // (e.g. <pr/14@github.com>). Embedding them in a URL path breaks Express routing
+  // because the slash is treated as a path separator even after %2F encoding —
+  // many reverse proxies decode %2F before Express sees it.
+  // SHA-256 → 24-char hex string: always URL-safe, still deterministic per thread.
+  const hash = crypto
+    .createHash("sha256")
+    .update(`${accountId}:${rawKey}`)
+    .digest("hex")
+    .slice(0, 24);
+
+  return `${accountId}_t_${hash}`;
 }
 
 /* ======================================================

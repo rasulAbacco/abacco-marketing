@@ -1,6 +1,5 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Mail, Search, RefreshCcw, CalendarDays } from "lucide-react";
-
 // ── Month-filter options ──────────────────────────────────────────────────────
 const MONTH_OPTIONS = [
   { value: "current", label: "Current Month" },
@@ -21,6 +20,25 @@ export default function InboxHeader({
   const [isRefreshing, setIsRefreshing]   = useState(false);
 
   const searchTimeoutRef = useRef(null);
+
+  // Add this to your imports at the top
+
+// Replace the entire month filter section in InboxHeader.jsx with this:
+
+const [dropdownOpen, setDropdownOpen] = useState(false);
+const dropdownRef = useRef(null);
+
+useEffect(() => {
+  const handleClickOutside = (e) => {
+    if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+      setDropdownOpen(false);
+    }
+  };
+  document.addEventListener("mousedown", handleClickOutside);
+  return () => document.removeEventListener("mousedown", handleClickOutside);
+}, []);
+
+const selectedLabel = MONTH_OPTIONS.find(o => o.value === monthFilter)?.label || "Current Month";
 
   // ── Search with debounce ─────────────────────────────────
   const handleSearchChange = (e) => {
@@ -76,43 +94,54 @@ export default function InboxHeader({
         <div className="flex items-center gap-2">
 
           {/* ── Month filter dropdown ── */}
-          <div className="relative flex items-center gap-1.5">
-            <CalendarDays
-              size={15}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none"
-            />
-            <select
-              value={monthFilter}
-              onChange={handleMonthFilterChange}
-              className="
-                pl-8 pr-3 py-1.5 text-sm
-                border border-emerald-200 rounded-lg
-                bg-white/80 text-slate-700 font-medium
-                focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent
-                hover:border-emerald-300 transition-colors cursor-pointer
-                appearance-none
-              "
-              aria-label="Filter emails by month"
-            >
-              {MONTH_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            {/* Custom chevron */}
-            <svg
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-emerald-400 pointer-events-none"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
+         {/* ── Month filter dropdown ── */}
+      {/* ── Month filter custom dropdown ── */}
+<div className="relative" ref={dropdownRef}>
+  <button
+    onClick={() => setDropdownOpen((prev) => !prev)}
+    className="flex items-center gap-2 pl-3 pr-3 py-1.5 text-sm border border-emerald-300 rounded-lg bg-white text-slate-700 font-medium hover:border-emerald-400 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-sm"
+  >
+    <CalendarDays size={15} className="text-emerald-500 flex-shrink-0" />
+    <span>{selectedLabel}</span>
+    <svg
+      className={`w-3.5 h-3.5 text-emerald-400 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`}
+      viewBox="0 0 20 20"
+      fill="currentColor"
+    >
+      <path
+        fillRule="evenodd"
+        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+        clipRule="evenodd"
+      />
+    </svg>
+  </button>
+
+  {/* ── Dropdown panel ── */}
+  {dropdownOpen && (
+    <div className="absolute right-0 mt-1.5 w-44 bg-white border border-emerald-100 rounded-xl shadow-xl shadow-emerald-100/60 z-50 overflow-hidden">
+      {MONTH_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => {
+            if (onMonthFilterChange) onMonthFilterChange(opt.value);
+            setDropdownOpen(false);
+          }}
+          className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-left transition-colors
+            ${monthFilter === opt.value
+              ? "bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 font-semibold"
+              : "text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 font-medium"
+            }`}
+        >
+          {/* Active checkmark */}
+          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+            monthFilter === opt.value ? "bg-emerald-500" : "bg-transparent"
+          }`} />
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )}
+</div>
 
           {/* ── Refresh button ── */}
           <button

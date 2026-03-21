@@ -229,10 +229,23 @@ router.get("/conversations/:accountId", protect, async (req, res) => {
 
     const formatted = formatMessages(messages);
 
-    // Short TTL (15 s) so new emails appear quickly
-    cache.set(cacheKey, formatted, 15);
+    // ── Deduplicate by conversationId ────────────────────────
+    // The query returns one row per *message*, not per conversation.
+    // Multiple messages in the same thread share a conversationId,
+    // which causes React "duplicate key" errors in the inbox list.
+    // Since results are already sorted sentAt DESC, the first
+    // occurrence of each conversationId is the most recent — keep it.
+    const seen = new Set();
+    const deduplicated = formatted.filter((item) => {
+      if (!item.conversationId || seen.has(item.conversationId)) return false;
+      seen.add(item.conversationId);
+      return true;
+    });
 
-    return res.json({ success: true, data: formatted });
+    // Short TTL (15 s) so new emails appear quickly
+    cache.set(cacheKey, deduplicated, 15);
+
+    return res.json({ success: true, data: deduplicated });
   } catch (err) {
     console.error("Conversations error:", err);
     res.status(500).json({ success: false });

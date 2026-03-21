@@ -207,9 +207,9 @@ export default function InboxMain() {
     if (!selectedAccount) return;
     try {
       setLoading(true);
-      const params = { folder: selectedFolder, month: monthFilter };
+      const params = { folder: selectedFolder, monthFilter: monthFilter };
       const res = await api.get(
-        `${API_BASE_URL}/api/inbox/accounts/${selectedAccount.id}/conversations`,
+        `${API_BASE_URL}/api/inbox/conversations/${selectedAccount.id}`,
         { params }
       );
       setConversations(res.data?.data || []);
@@ -442,6 +442,7 @@ export default function InboxMain() {
               setSelectedConversations={setSelectedConversations}
               refreshKey={refreshKey}
               onUnreadChange={() => setRefreshKey((prev) => prev + 1)}
+              monthFilter={monthFilter}
             />
           </div>
 

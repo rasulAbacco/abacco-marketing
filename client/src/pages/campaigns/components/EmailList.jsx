@@ -25,7 +25,7 @@ export default function ConversationList({
   // Default "three" (Last 3 Months) so existing emails always show on first load.
   // "current" (Current Month) only shows emails from the 1st of this month — if
   // no emails arrived this month yet, the list looks empty even though emails exist.
-  monthFilter = "three",
+  monthFilter = "current",
 }) {
   const [sortBy, setSortBy] = useState("sender");
   const [sortOrder, setSortOrder] = useState("desc");
