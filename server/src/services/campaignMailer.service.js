@@ -422,6 +422,45 @@ function buildNormalEmailHtml(body, signature, baseStyles) {
  * @param {number|null} opts.originalCampaignId — root campaign for thread data (followup only)
  * @param {object}  opts.customLimits
  */
+
+// 🔁 Retry wrapper (VERY IMPORTANT)
+async function sendWithRetry(sendFn, retries = 3) {
+  let lastError;
+
+  for (let i = 1; i <= retries; i++) {
+    try {
+      return await sendFn();
+    } catch (err) {
+      lastError = err;
+
+      console.warn(`⚠️ Retry ${i} failed:`, err.message);
+
+      // wait before retry (2s, 4s, 6s)
+      await new Promise(r => setTimeout(r, 2000 * i));
+    }
+  }
+
+  throw lastError;
+}
+
+// 🔍 Detect temporary errors
+function isTemporaryError(err) {
+  const msg = (err.message || "").toLowerCase();
+
+  return (
+    msg.includes("timeout") ||
+    msg.includes("connection") ||
+    msg.includes("rate") ||
+    msg.includes("421") ||
+    msg.includes("450") ||
+    msg.includes("too many") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("socket") ||
+    msg.includes("network")
+  );
+}
+
 async function processAccountBatched({
   campaignId,
   accountId,
@@ -543,12 +582,31 @@ async function processAccountBatched({
         await sleep(delayPerEmail);
 
       } catch (err) {
-        console.error(`❌ Send failed → ${recipient.email}:`, err.message);
-        await prisma.campaignRecipient.update({
-          where: { id: recipient.id },
-          data:  { status: "failed", error: err.message },
-        });
-      }
+          console.error(`❌ Send failed → ${recipient.email}:`, err.message);
+
+          // 🔁 TEMPORARY ERROR → retry later instead of failing
+          if (isTemporaryError(err)) {
+            console.warn(`🔁 Temporary error, re-queueing: ${recipient.email}`);
+
+            await prisma.campaignRecipient.update({
+              where: { id: recipient.id },
+              data: {
+                status: "pending",   // 🔥 retry again later
+                error: err.message,
+              },
+            });
+
+          } else {
+            // ❌ REAL FAILURE
+            await prisma.campaignRecipient.update({
+              where: { id: recipient.id },
+              data: {
+                status: "failed",
+                error: err.message,
+              },
+            });
+          }
+        }
     }
 
     // batch goes out of scope here — eligible for GC
@@ -588,12 +646,16 @@ async function sendOneNormal({
 
   const html = buildNormalEmailHtml(body, signature, baseStyles);
 
-  await transporter.sendMail({
-    from: account.senderName ? `"${account.senderName}" <${fromEmail}>` : fromEmail,
-    to:   recipient.email,
-    subject,
-    html,
-  });
+  await sendWithRetry(() =>
+    transporter.sendMail({
+      from: account.senderName
+        ? `"${account.senderName}" <${fromEmail}>`
+        : fromEmail,
+      to: recipient.email,
+      subject,
+      html,
+    })
+  );
   await prisma.conversation.upsert({
     where: { id: `${account.id}_sent_${recipient.email}` },
     update: {
@@ -613,22 +675,26 @@ async function sendOneNormal({
     },
   });
   // ✅ SAVE TO INBOX (IMPORTANT FIX)
-  await prisma.emailMessage.create({
-    data: {
-      emailAccountId: account.id,
-      messageId: `sent-${Date.now()}-${recipient.email}`,
-      conversationId: `${account.id}_sent_${recipient.email}`,
-      subject: rawSubject,
-      fromEmail: fromEmail,
-      fromName: account.senderName || null,
-      toEmail: recipient.email,
-      body: html,
-      direction: "sent",
-      folder: "sent",
-      sentAt: new Date(),
-      isRead: true,
-    },
-  });
+  try {
+    await prisma.emailMessage.create({
+      data: {
+        emailAccountId: account.id,
+        messageId: `sent-${Date.now()}-${recipient.email}`,
+        conversationId: `${account.id}_sent_${recipient.email}`,
+        subject: subject,
+        fromEmail: fromEmail,
+        fromName: account.senderName || null,
+        toEmail: recipient.email,
+        body: html,
+        direction: "sent",
+        folder: "sent",
+        sentAt: new Date(),
+        isRead: true,
+      },
+    });
+  } catch (e) {
+    console.error("⚠️ Email log failed (ignored):", e.message);
+  }
 
   await prisma.campaignRecipient.update({
     where: { id: recipient.id },
@@ -749,30 +815,18 @@ async function sendOneFollowup({
     console.warn(`⚠️ No original email found for ${recipient.email} — sending standalone`);
   }
 
-  await transporter.sendMail({
-    from: account.senderName ? `"${account.senderName}" <${fromEmail}>` : fromEmail,
-    to:   recipient.email,
+await sendWithRetry(() =>
+  transporter.sendMail({
+    from: account.senderName
+      ? `"${account.senderName}" <${fromEmail}>`
+      : fromEmail,
+    to: recipient.email,
     subject,
     html,
-  });
+  })
+);
 
-  await prisma.emailMessage.create({
-    data: {
-      emailAccountId: account.id,
-      messageId: `sent-${Date.now()}-${recipient.email}`,
-      conversationId: `${account.id}_sent_${recipient.email}`, // now valid ✅
-      subject: rawSubject || subject,
-      fromEmail: fromEmail,
-      fromName: account.senderName || null,
-      toEmail: recipient.email,
-      body: html,
-      direction: "sent",
-      folder: "sent",
-      sentAt: new Date(),
-      isRead: true,
-    },
-  });
-  // ✅ SAVE FOLLOW-UP TO INBOX
+try {
   await prisma.emailMessage.create({
     data: {
       emailAccountId: account.id,
@@ -789,6 +843,9 @@ async function sendOneFollowup({
       isRead: true,
     },
   });
+} catch (e) {
+  console.error("⚠️ Email log failed (ignored):", e.message);
+}
 
   await prisma.campaignRecipient.update({
     where: { id: recipient.id },
@@ -976,3 +1033,34 @@ async function updateCampaignStatus(campaignId) {
 
   console.log(`Campaign ${campaignId} status → ${finalStatus}`);
 }
+
+// 🔁 AUTO RETRY FAILED EMAILS (runs every 5 mins)
+setInterval(async () => {
+  try {
+    const failed = await prisma.campaignRecipient.findMany({
+      where: {
+        status: "failed",
+        retryCount: { lt: 3 } // max 3 retries
+      },
+      take: 100,
+    });
+
+    for (const r of failed) {
+      await prisma.campaignRecipient.update({
+        where: { id: r.id },
+        data: {
+          status: "pending",
+          retryCount: { increment: 1 }
+        }
+      });
+    }
+
+    if (failed.length) {
+      console.log(`🔁 Re-queued ${failed.length} failed emails`);
+    }
+
+  } catch (err) {
+    console.error("Retry job error:", err.message);
+  }
+
+}, 5 * 60 * 1000);
