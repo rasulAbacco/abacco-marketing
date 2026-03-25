@@ -594,6 +594,41 @@ async function sendOneNormal({
     subject,
     html,
   });
+  await prisma.conversation.upsert({
+    where: { id: `${account.id}_sent_${recipient.email}` },
+    update: {
+      lastMessageAt: new Date(),
+      messageCount: { increment: 1 },
+    },
+    create: {
+      id: `${account.id}_sent_${recipient.email}`,
+      emailAccountId: account.id,
+      subject: rawSubject || subject,
+      participants: `${fromEmail}, ${recipient.email}`,
+      toRecipients: recipient.email,
+      initiatorEmail: fromEmail,
+      lastMessageAt: new Date(),
+      messageCount: 1,
+      unreadCount: 0,
+    },
+  });
+  // ✅ SAVE TO INBOX (IMPORTANT FIX)
+  await prisma.emailMessage.create({
+    data: {
+      emailAccountId: account.id,
+      messageId: `sent-${Date.now()}-${recipient.email}`,
+      conversationId: `${account.id}_sent_${recipient.email}`,
+      subject: rawSubject,
+      fromEmail: fromEmail,
+      fromName: account.senderName || null,
+      toEmail: recipient.email,
+      body: html,
+      direction: "sent",
+      folder: "sent",
+      sentAt: new Date(),
+      isRead: true,
+    },
+  });
 
   await prisma.campaignRecipient.update({
     where: { id: recipient.id },
@@ -692,23 +727,23 @@ async function sendOneFollowup({
     });
 
     html = `<html>
-<body style="font-family:Calibri,sans-serif">
-${threadedHtml}
-</body>
-</html>`;
+      <body style="font-family:Calibri,sans-serif">
+      ${threadedHtml}
+      </body>
+      </html>`;
 
-    subject = `Re: ${originalSubject}`;
+          subject = `Re: ${originalSubject}`;
 
-    // Free the potentially large sentBodyHtml from prevEmail immediately
-    prevEmail.sentBodyHtml = null;
+          // Free the potentially large sentBodyHtml from prevEmail immediately
+          prevEmail.sentBodyHtml = null;
 
-  } else {
-    // No prior email found — send as a standalone message
-    html = `<html>
-<body style="font-family:Calibri,sans-serif">
-${followupWithSignature}
-</body>
-</html>`;
+        } else {
+          // No prior email found — send as a standalone message
+          html = `<html>
+      <body style="font-family:Calibri,sans-serif">
+      ${followupWithSignature}
+      </body>
+      </html>`;
 
     subject = `Re: ${fallbackSubject}`;
     console.warn(`⚠️ No original email found for ${recipient.email} — sending standalone`);
@@ -719,6 +754,40 @@ ${followupWithSignature}
     to:   recipient.email,
     subject,
     html,
+  });
+
+  await prisma.emailMessage.create({
+    data: {
+      emailAccountId: account.id,
+      messageId: `sent-${Date.now()}-${recipient.email}`,
+      conversationId: `${account.id}_sent_${recipient.email}`, // now valid ✅
+      subject: rawSubject || subject,
+      fromEmail: fromEmail,
+      fromName: account.senderName || null,
+      toEmail: recipient.email,
+      body: html,
+      direction: "sent",
+      folder: "sent",
+      sentAt: new Date(),
+      isRead: true,
+    },
+  });
+  // ✅ SAVE FOLLOW-UP TO INBOX
+  await prisma.emailMessage.create({
+    data: {
+      emailAccountId: account.id,
+      messageId: `sent-${Date.now()}-${recipient.email}`,
+      conversationId: `${account.id}_sent_${recipient.email}`,
+      subject: subject,
+      fromEmail: fromEmail,
+      fromName: account.senderName || null,
+      toEmail: recipient.email,
+      body: html,
+      direction: "sent",
+      folder: "sent",
+      sentAt: new Date(),
+      isRead: true,
+    },
   });
 
   await prisma.campaignRecipient.update({

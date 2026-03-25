@@ -82,6 +82,8 @@ const LIMIT_OPTIONS = [20, 30, 40, 50, 70, 80, 100, 150, 200];
 
 export default function CreateCampaign() {
   const [accounts, setAccounts] = useState([]);
+  const [accountGroups, setAccountGroups] = useState([]);
+  const [expandedGroupsInDropdown, setExpandedGroupsInDropdown] = useState({});
   const [recipientMode, setRecipientMode] = useState("manual");
   const [manualEmails, setManualEmails] = useState("");
   const [csvFile, setCsvFile] = useState(null);
@@ -242,6 +244,28 @@ export default function CreateCampaign() {
       }
     };
     fetchAccounts();
+  }, []);
+
+  useEffect(() => {
+    const fetchAccountGroups = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`${API_BASE_URL}/api/account-groups`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.success) {
+          setAccountGroups(data.data || []);
+          // Default: expand all groups so user sees accounts immediately
+          const expanded = {};
+          (data.data || []).forEach(g => { expanded[g.id] = true; });
+          setExpandedGroupsInDropdown(expanded);
+        }
+      } catch (err) {
+        console.error("Failed to fetch account groups", err);
+      }
+    };
+    fetchAccountGroups();
   }, []);
 
   useEffect(() => {
@@ -612,57 +636,128 @@ export default function CreateCampaign() {
 
               {showFromDropdown && (
                 <div className="relative z-50 mt-2 w-full bg-white/95 backdrop-blur-sm border border-emerald-200 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
-                  {availableAccounts.length > 0 && (
-                    <div className="p-3">
-                      <h4 className="text-xs font-bold text-emerald-600 uppercase tracking-wide mb-2 px-2">Available Accounts</h4>
-                      {availableAccounts.map(acc => (
-                        <label
-                          key={acc.id}
-                          className="flex items-center gap-3 p-3 hover:bg-emerald-50 rounded-lg cursor-pointer transition group"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedFroms.includes(acc.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedFroms([...selectedFroms, acc.id]);
-                              } else {
-                                setSelectedFroms(selectedFroms.filter(id => id !== acc.id));
-                              }
-                            }}
-                            className="w-4 h-4 text-emerald-600 border-emerald-300 rounded focus:ring-emerald-500"
-                          />
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold text-slate-900">{acc.email}</p>
-                            <p className="text-xs text-emerald-600 font-medium">
-                              {acc.provider?.toUpperCase()} • Limit: {getActualLimit(acc.id)}/hr
-                            </p>
-                          </div>
-                          
-                          <select
-                            value={customLimits[acc.id] || ""}
-                            onChange={(e) => {
-                              const newLimits = {...customLimits};
-                              if (e.target.value) {
-                                newLimits[acc.id] = parseInt(e.target.value);
-                              } else {
-                                delete newLimits[acc.id];
-                              }
-                              setCustomLimits(newLimits);
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs border border-emerald-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-emerald-50 font-semibold"
-                          >
-                            <option value="">Default ({getDefaultLimit(acc.provider)})</option>
-                            {LIMIT_OPTIONS.map(opt => (
-                              <option key={opt} value={opt}>{opt}/hr</option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
-                    </div>
-                  )}
+                  {(() => {
+                    // Build grouped view mirroring the sidebar structure
+                    const ungrouped = availableAccounts.filter(
+                      a => !a.groupId || !accountGroups.find(g => g.id === a.groupId)
+                    );
+                    const groupsWithAccounts = accountGroups.map(group => ({
+                      ...group,
+                      accounts: availableAccounts.filter(a => a.groupId === group.id),
+                    }));
 
+                    const renderAccountRow = (acc) => (
+                      <label
+                        key={acc.id}
+                        className="flex items-center gap-3 p-2.5 hover:bg-emerald-50 rounded-lg cursor-pointer transition group"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedFroms.includes(acc.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedFroms([...selectedFroms, acc.id]);
+                            } else {
+                              setSelectedFroms(selectedFroms.filter(id => id !== acc.id));
+                            }
+                          }}
+                          className="w-4 h-4 text-emerald-600 border-emerald-300 rounded focus:ring-emerald-500"
+                        />
+                        <div className="w-6 h-6 flex-shrink-0 bg-gradient-to-br from-emerald-500 to-green-600 rounded-full flex items-center justify-center text-white text-[10px] font-bold">
+                          {acc.email.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{acc.email}</p>
+                          <p className="text-xs text-emerald-600 font-medium">
+                            {acc.provider?.toUpperCase()} • Limit: {getActualLimit(acc.id)}/hr
+                          </p>
+                        </div>
+                        <select
+                          value={customLimits[acc.id] || ""}
+                          onChange={(e) => {
+                            const newLimits = {...customLimits};
+                            if (e.target.value) {
+                              newLimits[acc.id] = parseInt(e.target.value);
+                            } else {
+                              delete newLimits[acc.id];
+                            }
+                            setCustomLimits(newLimits);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs border border-emerald-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-emerald-50 font-semibold"
+                        >
+                          <option value="">Default ({getDefaultLimit(acc.provider)})</option>
+                          {LIMIT_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}/hr</option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+
+                    return (
+                      <div className="p-2">
+                        {/* Grouped accounts — only show groups that have at least one available account */}
+                        {groupsWithAccounts.filter(group => group.accounts.length > 0).map(group => {
+                          const isExpanded = expandedGroupsInDropdown[group.id] !== false;
+                          const groupSelectedCount = group.accounts.filter(a => selectedFroms.includes(a.id)).length;
+                          return (
+                            <div key={group.id} className="mb-1">
+                              {/* Group header row */}
+                              <button
+                                type="button"
+                                onClick={() => setExpandedGroupsInDropdown(prev => ({ ...prev, [group.id]: !isExpanded }))}
+                                className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-emerald-50 transition"
+                              >
+                                <span
+                                  className="w-5 h-5 rounded flex items-center justify-center text-white flex-shrink-0"
+                                  style={{ backgroundColor: group.color || "#10b981" }}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h3.764c.958 0 1.76.56 2.09 1.328L9 4H13.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"/></svg>
+                                </span>
+                                <span className="text-xs font-bold text-slate-700 flex-1 text-left">{group.name}</span>
+                                {groupSelectedCount > 0 && (
+                                  <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-full">
+                                    {groupSelectedCount} selected
+                                  </span>
+                                )}
+                                <span className="text-slate-400 text-xs">{isExpanded ? "▾" : "▸"}</span>
+                              </button>
+                              {/* Accounts under this group */}
+                              {isExpanded && (
+                                <div className="ml-4 pl-2 border-l-2 border-emerald-100 space-y-0.5">
+                                  {group.accounts.length === 0 ? (
+                                    <p className="text-xs text-slate-400 px-3 py-2">No accounts in this group</p>
+                                  ) : (
+                                    group.accounts.map(renderAccountRow)
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Ungrouped accounts */}
+                        {ungrouped.length > 0 && (
+                          <div className="mt-1">
+                            {accountGroups.length > 0 && (
+                              <div className="flex items-center gap-2 px-2 py-1 mb-1">
+                                <div className="flex-1 h-px bg-slate-100" />
+                                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Ungrouped</span>
+                                <div className="flex-1 h-px bg-slate-100" />
+                              </div>
+                            )}
+                            {ungrouped.map(renderAccountRow)}
+                          </div>
+                        )}
+
+                        {availableAccounts.length === 0 && (
+                          <p className="text-xs text-slate-400 text-center py-4">No available accounts</p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Locked / In Use accounts */}
                   {lockedAccountsList.length > 0 && (
                     <div className="border-t border-emerald-200 p-3">
                       <h4 className="text-xs font-bold text-red-700 uppercase tracking-wide mb-2 px-2 flex items-center gap-1.5">
