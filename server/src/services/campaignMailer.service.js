@@ -508,10 +508,19 @@ async function processAccountBatched({
     // Only pending rows for this account; fetched fresh each time
     // so prior batch is eligible for GC once the loop body exits.
     const batch = await prisma.campaignRecipient.findMany({
-      where:   { campaignId, accountId: Number(accountId), status: "pending" },
-      select:  { id: true, email: true },
-      orderBy: { id: "asc" },
-      take:    BATCH_SIZE,
+      where: {
+        campaignId,
+        accountId: Number(accountId),
+        OR: [
+          { status: "retry" },     // 🔥 PRIORITY FIRST
+          { status: "pending" }
+        ]
+      },
+      orderBy: [
+        { status: "desc" },  // retry comes first
+        { id: "asc" }
+      ],
+      take: BATCH_SIZE,
     });
 
     if (batch.length === 0) {
@@ -579,33 +588,35 @@ async function processAccountBatched({
         }
 
         accountSendCount++;
-        await sleep(delayPerEmail);
-
+          if (!recipient._isRetry) {
+            await sleep(delayPerEmail);
+          }
       } catch (err) {
           console.error(`❌ Send failed → ${recipient.email}:`, err.message);
 
           // 🔁 TEMPORARY ERROR → retry later instead of failing
-          if (isTemporaryError(err)) {
-            console.warn(`🔁 Temporary error, re-queueing: ${recipient.email}`);
+         if (isTemporaryError(err) && (recipient.retryCount || 0) < 3) {
+          console.warn(`🔁 Instant retry: ${recipient.email}`);
+          recipient._isRetry = true;
 
-            await prisma.campaignRecipient.update({
-              where: { id: recipient.id },
-              data: {
-                status: "pending",   // 🔥 retry again later
-                error: err.message,
-              },
-            });
+          await prisma.campaignRecipient.update({
+            where: { id: recipient.id },
+            data: {
+              status: "retry",   // 🔥 immediate retry
+              retryCount: { increment: 1 },
+              error: err.message,
+            },
+          });
 
-          } else {
-            // ❌ REAL FAILURE
-            await prisma.campaignRecipient.update({
-              where: { id: recipient.id },
-              data: {
-                status: "failed",
-                error: err.message,
-              },
-            });
-          }
+        } else {
+          await prisma.campaignRecipient.update({
+            where: { id: recipient.id },
+            data: {
+              status: "failed",
+              error: err.message,
+            },
+          });
+        }
         }
     }
 
@@ -918,7 +929,7 @@ export async function sendBulkCampaign(campaignId) {
   // For 10,000 recipients this is ~10,000 × ~40 bytes ≈ 400 KB. Safe.
   const pendingRecipients = await prisma.campaignRecipient.findMany({
     where:   { campaignId, status: "pending" },
-    select:  { id: true, email: true, accountId: true },
+    select:  { id: true, email: true, accountId: true, retryCount: true },
     orderBy: { id: "asc" },
   });
 
@@ -1035,32 +1046,32 @@ async function updateCampaignStatus(campaignId) {
 }
 
 // 🔁 AUTO RETRY FAILED EMAILS (runs every 5 mins)
-setInterval(async () => {
-  try {
-    const failed = await prisma.campaignRecipient.findMany({
-      where: {
-        status: "failed",
-        retryCount: { lt: 3 } // max 3 retries
-      },
-      take: 100,
-    });
+// setInterval(async () => {
+//   try {
+//     const failed = await prisma.campaignRecipient.findMany({
+//       where: {
+//         status: "failed",
+//         retryCount: { lt: 3 } // max 3 retries
+//       },
+//       take: 100,
+//     });
 
-    for (const r of failed) {
-      await prisma.campaignRecipient.update({
-        where: { id: r.id },
-        data: {
-          status: "pending",
-          retryCount: { increment: 1 }
-        }
-      });
-    }
+//     for (const r of failed) {
+//       await prisma.campaignRecipient.update({
+//         where: { id: r.id },
+//         data: {
+//           status: "pending",
+//           retryCount: { increment: 1 }
+//         }
+//       });
+//     }
 
-    if (failed.length) {
-      console.log(`🔁 Re-queued ${failed.length} failed emails`);
-    }
+//     if (failed.length) {
+//       console.log(`🔁 Re-queued ${failed.length} failed emails`);
+//     }
 
-  } catch (err) {
-    console.error("Retry job error:", err.message);
-  }
+//   } catch (err) {
+//     console.error("Retry job error:", err.message);
+//   }
 
-}, 5 * 60 * 1000);
+// }, 5 * 60 * 1000);
