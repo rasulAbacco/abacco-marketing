@@ -434,56 +434,58 @@ router.delete("/:id", protect, async (req, res) => {
     });
 
     // 3️⃣ Transaction cleanup
-    await prisma.$transaction(async (tx) => {
-      // ---- Messages ----
-      const messages = await tx.emailMessage.findMany({
-        where: { emailAccountId: id },
-        select: { id: true },
-      });
-      const messageIds = messages.map((m) => m.id);
+// 3️⃣ Cleanup WITHOUT transaction (fix timeout issue)
 
-      if (messageIds.length > 0) {
-        await tx.attachment.deleteMany({
-          where: { emailMessageId: { in: messageIds } },
-        });
+// ---- Messages ----
+const messages = await prisma.emailMessage.findMany({
+  where: { emailAccountId: id },
+  select: { id: true },
+});
 
-        await tx.messageTag.deleteMany({
-          where: { messageId: { in: messageIds } },
-        });
-      }
+const messageIds = messages.map((m) => m.id);
 
-      await tx.emailMessage.deleteMany({
-        where: { emailAccountId: id },
-      });
+if (messageIds.length > 0) {
+  await prisma.attachment.deleteMany({
+    where: { emailMessageId: { in: messageIds } },
+  });
 
-      // ---- Conversations ----
-      const conversations = await tx.conversation.findMany({
-        where: { emailAccountId: id },
-        select: { id: true },
-      });
-      const conversationIds = conversations.map((c) => c.id);
+  await prisma.messageTag.deleteMany({
+    where: { messageId: { in: messageIds } },
+  });
+}
 
-      if (conversationIds.length > 0) {
-        await tx.conversationTag.deleteMany({
-          where: { conversationId: { in: conversationIds } },
-        });
+await prisma.emailMessage.deleteMany({
+  where: { emailAccountId: id },
+});
 
-        await tx.scheduledMessage.deleteMany({
-          where: { conversationId: { in: conversationIds } },
-        });
-      }
+// ---- Conversations ----
+const conversations = await prisma.conversation.findMany({
+  where: { emailAccountId: id },
+  select: { id: true },
+});
 
-      await tx.conversation.deleteMany({
-        where: { emailAccountId: id },
-      });
+const conversationIds = conversations.map((c) => c.id);
 
-      // ---- Other account data ----
-      await tx.emailFolder.deleteMany({ where: { accountId: id } });
-      await tx.syncState.deleteMany({ where: { accountId: id } });
+if (conversationIds.length > 0) {
+  await prisma.conversationTag.deleteMany({
+    where: { conversationId: { in: conversationIds } },
+  });
 
-      // ---- Final delete ----
-      await tx.emailAccount.delete({ where: { id } });
-    });
+  await prisma.scheduledMessage.deleteMany({
+    where: { conversationId: { in: conversationIds } },
+  });
+}
+
+await prisma.conversation.deleteMany({
+  where: { emailAccountId: id },
+});
+
+// ---- Other account data ----
+await prisma.emailFolder.deleteMany({ where: { accountId: id } });
+await prisma.syncState.deleteMany({ where: { accountId: id } });
+
+// ---- Final delete ----
+await prisma.emailAccount.delete({ where: { id } });
 
     console.log("🟢 Account deleted successfully");
     res.json({ success: true, message: "Account deleted" });
