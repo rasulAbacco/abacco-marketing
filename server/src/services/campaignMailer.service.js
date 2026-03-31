@@ -531,94 +531,111 @@ async function processAccountBatched({
     console.log(`📦 Account ${account.email}: processing batch of ${batch.length}`);
 
     // ── Process each recipient in the batch ───────────────────
-    for (const recipient of batch) {
+for (const recipient of batch) {
 
-      // Inner stop check (between individual emails)
-      const innerCheck = await prisma.campaign.findUnique({
-        where:  { id: campaignId },
-        select: { status: true },
-      });
-      if (!innerCheck || innerCheck.status !== "sending") {
-        console.log(`⏹ Campaign ${campaignId} stopped mid-batch`);
-        return;
-      }
+  // Inner stop check (between individual emails)
+  const innerCheck = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: { status: true },
+  });
 
-      // ── Rate-limit guard ─────────────────────────────────────
-      if (accountSendCount >= limit) {
-        const elapsed = Date.now() - accountStartTime;
-        if (elapsed < 3_600_000) {
-          const wait = 3_600_000 - elapsed;
-          console.log(
-            `⏳ ${account.email} hourly limit reached — waiting ${Math.ceil(wait / 60_000)}m`
-          );
-          await sleep(wait);
-        }
-        accountSendCount = 0;
-        accountStartTime = Date.now();
-      }
+  if (!innerCheck || innerCheck.status !== "sending") {
+    console.log(`⏹ Campaign ${campaignId} stopped mid-batch`);
+    return;
+  }
 
-      // ── Look up pre-computed subject + pitch for this recipient
-      const assignment = assignmentMap.get(recipient.id);
-      if (!assignment) {
-        // Edge case: recipient added after plan was built — skip safely
-        console.warn(`⚠️ No assignment found for recipient ${recipient.id}, skipping`);
-        continue;
-      }
+  // ✅ CRITICAL FIX: PREVENT DOUBLE SEND
+  const alreadySent = await prisma.campaignRecipient.findUnique({
+    where: { id: recipient.id },
+    select: { status: true },
+  });
 
-      try {
-        if (campaign.sendType === "followup") {
-          await sendOneFollowup({
-            recipient,
-            account,
-            transporter,
-            fromEmail,
-            campaign,
-            assignment,
-            originalCampaignId,
-          });
-        } else {
-          await sendOneNormal({
-            recipient,
-            account,
-            transporter,
-            fromEmail,
-            campaign,
-            assignment,
-          });
-        }
+  if (alreadySent?.status === "sent") {
+    console.log("⚠️ Already sent, skipping:", recipient.email);
+    continue;
+  }
 
-        accountSendCount++;
-          if (!recipient._isRetry) {
-            await sleep(delayPerEmail);
-          }
-      } catch (err) {
-          console.error(`❌ Send failed → ${recipient.email}:`, err.message);
-
-          // 🔁 TEMPORARY ERROR → retry later instead of failing
-         if (isTemporaryError(err) && (recipient.retryCount || 0) < 3) {
-          console.warn(`🔁 Instant retry: ${recipient.email}`);
-          recipient._isRetry = true;
-
-          await prisma.campaignRecipient.update({
-            where: { id: recipient.id },
-            data: {
-              status: "retry",   // 🔥 immediate retry
-              retryCount: { increment: 1 },
-              error: err.message,
-            },
-          });
-
-        } else {
-          await prisma.campaignRecipient.update({
-            where: { id: recipient.id },
-            data: {
-              status: "failed",
-              error: err.message,
-            },
-          });
-        }
-        }
+  // ── Rate-limit guard ─────────────────────────────────────
+  if (accountSendCount >= limit) {
+    const elapsed = Date.now() - accountStartTime;
+    if (elapsed < 3_600_000) {
+      const wait = 3_600_000 - elapsed;
+      console.log(
+        `⏳ ${account.email} hourly limit reached — waiting ${Math.ceil(wait / 60_000)}m`
+      );
+      await sleep(wait);
     }
+    accountSendCount = 0;
+    accountStartTime = Date.now();
+  }
+
+  // ── Look up pre-computed subject + pitch for this recipient
+  const assignment = assignmentMap.get(recipient.id);
+  if (!assignment) {
+    console.warn(`⚠️ No assignment found for recipient ${recipient.id}, skipping`);
+    continue;
+  }
+
+  try {
+    if (campaign.sendType === "followup") {
+      await sendOneFollowup({
+        recipient,
+        account,
+        transporter,
+        fromEmail,
+        campaign,
+        assignment,
+        originalCampaignId,
+      });
+    } else {
+      await sendOneNormal({
+        recipient,
+        account,
+        transporter,
+        fromEmail,
+        campaign,
+        assignment,
+      });
+    }
+
+    accountSendCount++;
+
+    if (!recipient._isRetry) {
+      await sleep(delayPerEmail);
+    }
+
+  } catch (err) {
+    console.error(`❌ Send failed → ${recipient.email}:`, err.message);
+
+    // 🔁 TEMPORARY ERROR → retry (SAFE VERSION)
+    if (
+      isTemporaryError(err) &&
+      (recipient.retryCount || 0) < 3 &&
+      !err.message.toLowerCase().includes("sent") // ✅ avoid duplicate resend
+    ) {
+      console.warn(`🔁 Retry scheduled: ${recipient.email}`);
+      recipient._isRetry = true;
+
+      await prisma.campaignRecipient.update({
+        where: { id: recipient.id },
+        data: {
+          status: "retry",
+          retryCount: { increment: 1 },
+          error: err.message,
+        },
+      });
+
+    } else {
+      await prisma.campaignRecipient.update({
+        where: { id: recipient.id },
+        data: {
+          status: "failed",
+          error: err.message,
+        },
+      });
+    }
+  }
+}
 
     // batch goes out of scope here — eligible for GC
   }
@@ -687,22 +704,35 @@ async function sendOneNormal({
   });
   // ✅ SAVE TO INBOX (IMPORTANT FIX)
   try {
-    await prisma.emailMessage.create({
-      data: {
+    // ✅ STRONG DUPLICATE CHECK (NO TIME LIMIT)
+    const exists = await prisma.emailMessage.findFirst({
+      where: {
         emailAccountId: account.id,
-        messageId: `sent-${Date.now()}-${recipient.email}`,
-        conversationId: `${account.id}_sent_${recipient.email}`,
-        subject: subject,
-        fromEmail: fromEmail,
-        fromName: account.senderName || null,
         toEmail: recipient.email,
-        body: html,
-        direction: "sent",
-        folder: "sent",
-        sentAt: new Date(),
-        isRead: true,
+        subject: subject,
       },
     });
+
+    if (exists) {
+      console.log("⚠️ Duplicate DB insert skipped:", recipient.email);
+    } else {
+      // ✅ ALWAYS GENERATE UNIQUE messageId
+      const newMessageId = `sent-${Date.now()}-${recipient.email}`;
+
+      await prisma.emailMessage.create({
+        data: {
+          emailAccountId: account.id,
+          toEmail: recipient.email,
+          subject: subject,
+          sentAt: new Date(),
+          messageId: newMessageId,
+          fromEmail: fromEmail,
+          direction: "sent",
+          folder: "sent",
+          isRead: true,
+        },
+      });
+    }
   } catch (e) {
     console.error("⚠️ Email log failed (ignored):", e.message);
   }
@@ -838,26 +868,41 @@ await sendWithRetry(() =>
 );
 
 try {
-  await prisma.emailMessage.create({
-    data: {
+  // ✅ DUPLICATE CHECK (IMPORTANT)
+  const exists = await prisma.emailMessage.findFirst({
+    where: {
       emailAccountId: account.id,
-      messageId: `sent-${Date.now()}-${recipient.email}`,
-      conversationId: `${account.id}_sent_${recipient.email}`,
-      subject: subject,
-      fromEmail: fromEmail,
-      fromName: account.senderName || null,
       toEmail: recipient.email,
-      body: html,
-      direction: "sent",
-      folder: "sent",
-      sentAt: new Date(),
-      isRead: true,
+      subject: subject,
     },
   });
+
+  if (exists) {
+    console.log("⚠️ Follow-up duplicate skipped:", recipient.email);
+  } else {
+    // ✅ GENERATE UNIQUE messageId
+    const newMessageId = `sent-${Date.now()}-${recipient.email}`;
+
+    await prisma.emailMessage.create({
+      data: {
+        emailAccountId: account.id,
+        messageId: newMessageId,
+        conversationId: `${account.id}_sent_${recipient.email}`,
+        subject: subject,
+        fromEmail: fromEmail,
+        fromName: account.senderName || null,
+        toEmail: recipient.email,
+        body: html,
+        direction: "sent",
+        folder: "sent",
+        sentAt: new Date(),
+        isRead: true,
+      },
+    });
+  }
 } catch (e) {
   console.error("⚠️ Email log failed (ignored):", e.message);
 }
-
   await prisma.campaignRecipient.update({
     where: { id: recipient.id },
     data: {

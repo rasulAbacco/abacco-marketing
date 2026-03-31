@@ -45,10 +45,26 @@ const fetchAccounts = async () => {
   setError(null);
 
   try {
+    // Always fetch all accounts, then filter client-side by groupId.
+    // This is a reliable safety net in case the backend ignores ?groupId param.
     const res = await api.get(`${API_BASE_URL}/api/accounts`);
 
     if (res.data?.success && Array.isArray(res.data.data)) {
-      setAccounts(res.data.data);
+      const all = res.data.data;
+
+      if (pendingGroup?.groupId) {
+        // ✅ Show accounts for this group  +  ungrouped accounts (no groupId)
+        // Ungrouped accounts appear in every group with an "Ungrouped" badge
+        const filtered = all.filter(
+          (acc) =>
+            String(acc.groupId) === String(pendingGroup.groupId) || // this group
+            !acc.groupId                                             // ungrouped
+        );
+        setAccounts(filtered);
+      } else {
+        // No group context — show all
+        setAccounts(all);
+      }
     } else {
       console.warn("Unexpected API response:", res.data);
       setAccounts([]);
@@ -317,9 +333,27 @@ const logoutAccount = async () => {
 
           {/* 🔥 NEW: List accounts with editable sender name */}
           <div className="mb-6">
-            <h3 className="text-lg font-bold mb-2">Your Accounts</h3>
-            {accounts.length === 0 ? (
-              <div className="text-gray-400">No accounts configured.</div>
+            <h3 className="text-lg font-bold mb-2">
+              {pendingGroup
+                ? `Accounts in "${pendingGroup.groupName}"`
+                : "Your Accounts"}
+            </h3>
+            {loadingAccounts ? (
+              <div className="text-gray-400 text-sm py-2">Loading accounts…</div>
+            ) : accounts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-6 px-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
+                <div className="text-2xl mb-2">📭</div>
+                <p className="text-sm font-semibold text-slate-600 mb-1">
+                  {pendingGroup
+                    ? `No accounts in "${pendingGroup.groupName}" yet`
+                    : "No accounts configured"}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {pendingGroup
+                    ? "Use the form below to add your first account to this group."
+                    : "Add an email account using the form below."}
+                </p>
+              </div>
             ) : (
               accounts.map((acc) => (
                 <div
@@ -333,7 +367,15 @@ const logoutAccount = async () => {
                 >
                   <div className="flex justify-between items-center">
                     <div className="flex-1">
-                      <div className="font-medium">{acc.email}</div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="font-medium">{acc.email}</div>
+                        {/* ✅ Show "Ungrouped" badge if account has no group */}
+                        {!acc.groupId && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                            📁 Ungrouped
+                          </span>
+                        )}
+                      </div>
                       <div className="text-sm text-gray-500">
                         {acc.provider} · {acc.imapHost}:{acc.imapPort}
                       </div>

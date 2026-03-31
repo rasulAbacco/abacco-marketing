@@ -345,6 +345,7 @@ model CampaignRecipient {
   // 🔹 Relation (FIXED — ONE LINE)
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
+  @@unique([campaignId, email])
   // 🔹 Indexes (VERY IMPORTANT for performance)
   @@index([campaignId])
   @@index([campaignId, status])

@@ -202,7 +202,7 @@ export const createCampaign = async (req, res) => {
     // 5️⃣ Create campaign
     const fromIds = fromAccountIds.map(Number);
 
-   const campaign = await prisma.campaign.create({
+    const campaign = await prisma.campaign.create({
       data: {
         userId: req.user.id,
         name: finalName,
@@ -228,13 +228,29 @@ export const createCampaign = async (req, res) => {
         pitchIds: JSON.stringify(pitchIds || []),
         customLimits: customLimits ? JSON.stringify(customLimits) : null,
 
+        // 🔥 FIX STARTS HERE
         recipients: {
-          create: recipients.map((email, i) => ({
-            email,
-            status: "pending",
-            accountId: fromIds[i % fromIds.length],
-          })),
+          create: (() => {
+            // ✅ 1. REMOVE DUPLICATES
+            const uniqueRecipients = [...new Set(recipients)];
+
+            // ✅ 2. OPTIONAL: normalize emails (avoid case duplicates)
+            const normalizedRecipients = uniqueRecipients.map(e =>
+              e.trim().toLowerCase()
+            );
+
+            // ✅ 3. FINAL UNIQUE LIST
+            const finalRecipients = [...new Set(normalizedRecipients)];
+
+            // ✅ 4. MAP TO DB FORMAT
+            return finalRecipients.map((email, i) => ({
+              email,
+              status: "pending",
+              accountId: fromIds[i % fromIds.length], // balanced distribution
+            }));
+          })(),
         },
+        // 🔥 FIX ENDS HERE
       },
     });
 
@@ -250,9 +266,16 @@ export const createCampaign = async (req, res) => {
       invalidateDashboardCache(req.user.id);
 
       // Fire-and-forget (ONLY ONCE)
-      sendBulkCampaign(campaign.id).catch(err => {
-        console.error(`Error in immediate campaign ${campaign.id}:`, err);
+     // ✅ PREVENT DOUBLE TRIGGER
+      const freshCampaign = await prisma.campaign.findUnique({
+        where: { id: campaign.id }
       });
+
+      if (freshCampaign.status === "sending") {
+        sendBulkCampaign(campaign.id).catch(err => {
+          console.error(`Error in campaign ${campaign.id}:`, err);
+        });
+      }
     } else {
       invalidateDashboardCache(req.user.id);
     }
