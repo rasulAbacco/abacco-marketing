@@ -499,7 +499,7 @@ await prisma.emailAccount.delete({ where: { id } });
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
+ 
 /* ============================================================
    🟢 GET USER ACCOUNTS
    ============================================================ */
