@@ -500,9 +500,7 @@ await prisma.emailAccount.delete({ where: { id } });
   }
 });
  
-/* ============================================================
-   🟢 GET USER ACCOUNTS
-   ============================================================ */
+
 // router.get("/", protect, async (req, res) => {
 //   try {
 //     if (!req.user || !req.user.id) {
@@ -530,9 +528,7 @@ await prisma.emailAccount.delete({ where: { id } });
 // 🔄 IMMEDIATELY SYNC AND RETURN EMAILS
 // ======================================================
 
-/* ============================================================
-   📋 GET /accounts → GET ALL ACCOUNTS (WITH SENDER NAME)
-   ============================================================ */
+
 router.get("/", protect, async (req, res) => {
   try {
     const cacheKey = `accounts:${req.user.id}`;
