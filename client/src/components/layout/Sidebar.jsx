@@ -1,4 +1,4 @@
-// Sidebar.jsx - Responsive and Interactive Sidebar Component
+// TopNavbar.jsx - Converted from Sidebar to Top Navigation Bar
 import { NavLink, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import {
@@ -8,10 +8,12 @@ import {
   Megaphone,
   Shield,
   FileText,
-  X,
   Sparkles,
   BarChart3,
   LogOut,
+  ChevronDown,
+  Menu,
+  X,
 } from "lucide-react";
 
 const navigationItems = [
@@ -24,29 +26,40 @@ const navigationItems = [
   { name: "Admin", icon: Shield, path: "/admin" },
 ];
 
-export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
+export default function TopNavbar() {
   const [userData, setUserData] = useState(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
-  // ✅ Fetch user data from localStorage on component mount
+  // Fetch user data from localStorage on mount
   useEffect(() => {
     const user = localStorage.getItem("user");
     if (user) {
       try {
         const parsedUser = JSON.parse(user);
         setUserData(parsedUser);
-        
-        // 🔍 Debug log
-        console.log("Sidebar - User data:", parsedUser);
-        console.log("Sidebar - User role:", parsedUser.jobRole);
+        console.log("TopNavbar - User data:", parsedUser);
+        console.log("TopNavbar - User role:", parsedUser.jobRole);
       } catch (error) {
         console.error("Error parsing user data:", error);
       }
     }
   }, []);
 
-  // ✅ Get user's initials for avatar
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest("#user-menu-container")) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Get user's initials for avatar
   const getInitials = (name) => {
     if (!name) return "U";
     const names = name.trim().split(" ");
@@ -54,37 +67,28 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
     return (names[0].charAt(0) + names[names.length - 1].charAt(0)).toUpperCase();
   };
 
-  // ✅ Check if user is admin (case-insensitive and handles all data types)
+  // Check if user is admin
   const isAdmin = () => {
     if (!userData || !userData.jobRole) return false;
     const role = String(userData.jobRole).toLowerCase().trim();
-    console.log("Checking if admin - role:", role, "isAdmin:", role === "admin");
     return role === "admin";
   };
 
-  // ✅ Handle logout
+  // Handle logout
   const handleLogout = () => {
-    // Clear user data from localStorage
     localStorage.removeItem("user");
-    localStorage.removeItem("token"); // If you have a token
-    
-    // Close modal
+    localStorage.removeItem("token");
     setShowLogoutModal(false);
-    
-    // Redirect to login page
     navigate("/");
   };
 
+  const filteredNavItems = navigationItems.filter((item) => {
+    if (item.name === "Admin") return isAdmin();
+    return true;
+  });
+
   return (
     <>
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden transition-opacity"
-        />
-      )}
-
       {/* Logout Confirmation Modal */}
       {showLogoutModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -128,151 +132,150 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen, setExpanded }) {
         </div>
       )}
 
-      <aside
-        onMouseEnter={() => setExpanded(true)}
-        onMouseLeave={() => setExpanded(false)}
-        className="
-          group fixed top-0 left-0 h-screen
-          w-20 hover:w-64
-          bg-gradient-to-b from-white via-emerald-50/30 to-green-50/30 
-          dark:from-slate-900 dark:via-emerald-950/20 dark:to-green-950/20
-          border-r border-emerald-100 dark:border-emerald-900/50
-          transition-all duration-300 ease-in-out
-          z-50 overflow-hidden
-          shadow-xl shadow-emerald-500/5
-        "
-      >
-        <div className="flex flex-col h-full p-4">
-
-          {/* Close button (mobile) */}
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="lg:hidden self-end p-2 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
-          >
-            <X size={20} className="text-slate-600 dark:text-slate-400" />
-          </button>
+      {/* Top Navbar */}
+      <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-green-50 border-b border-emerald-200 shadow-sm">
+        <div className="flex items-center h-full px-4 gap-4">
 
           {/* Brand */}
-          <div className="mb-8 flex items-center gap-3">
-            <div className="min-w-[40px] h-12 w-12 rounded-xl bg-gradient-to-br from-emerald-500 via-green-600 to-emerald-700 text-white flex items-center justify-center font-bold text-xl shadow-lg shadow-emerald-500/50 ring-2 ring-emerald-400/20">
-              <Sparkles size={24} strokeWidth={2.5} />
+          <div className="flex items-center gap-2.5 shrink-0 mr-4">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 via-green-600 to-emerald-700 text-white flex items-center justify-center font-bold shadow-lg shadow-emerald-500/50 ring-2 ring-emerald-400/20">
+              <Sparkles size={20} strokeWidth={2.5} />
             </div>
-
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
-              <h1 className="text-base font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
+            <div className="hidden sm:block">
+              <h1 className="text-lg font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent leading-tight">
                 Abacco Marketing
               </h1>
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Marketing Intelligence</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-tight">
+                Marketing Intelligence
+              </p>
             </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto">
-            <div className="space-y-1.5">
-              {/* ✅ Filter menu items based on role (case-insensitive) */}
-              {navigationItems
-                .filter((item) => {
-                  // If item is Admin tab, only show to admin users
-                  if (item.name === "Admin") {
-                    const shouldShow = isAdmin();
-                    console.log("Admin tab - should show:", shouldShow);
-                    return shouldShow;
-                  }
-                  return true;
-                })
-                .map((item) => (
-                  <NavLink
-                    key={item.name}
-                    to={item.path}
-                    onClick={() => setSidebarOpen(false)}
-                    className={({ isActive }) =>
-                      `
-                      flex items-center gap-3
-                      px-3 py-3 rounded-xl text-sm font-medium 
-                      transition-all duration-200
-                      relative overflow-hidden
-                      ${
-                        isActive
-                          ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/40 scale-100"
-                          : "text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 hover:scale-105"
-                      }
-                    `
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        {isActive && (
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-white rounded-r-full" />
-                        )}
+          {/* Spacer - pushes nav + user menu to the right */}
+          <div className="flex-1" />
 
-                        {/* Icon */}
-                        <div className="min-w-[20px] flex justify-center">
-                          <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-                        </div>
-
-                        {/* Label */}
-                        <span
-                          className="
-                            whitespace-nowrap
-                            opacity-0 group-hover:opacity-100
-                            transition-opacity duration-200
-                            font-semibold
-                          "
-                        >
-                          {item.name}
-                        </span>
-                      </>
-                    )}
-                  </NavLink>
-                ))}
-            </div>
+          {/* Desktop Nav Links */}
+          <nav className="hidden lg:flex items-center gap-1">
+            {filteredNavItems.map((item) => (
+              <NavLink
+                key={item.name}
+                to={item.path}
+                className={({ isActive }) =>
+                  `flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 whitespace-nowrap
+                  ${
+                    isActive
+                      ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md shadow-emerald-500/40"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400"
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <item.icon size={16} strokeWidth={isActive ? 2.5 : 2} />
+                    <span className="font-semibold">{item.name}</span>
+                  </>
+                )}
+              </NavLink>
+            ))}
           </nav>
 
-          {/* Footer - user section & logout */}
-          <div className="pt-4 mt-4 border-t border-emerald-200 dark:border-emerald-900/50 space-y-2">
-            {/* User Info */}
-            <div className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all duration-200 cursor-pointer">
-              <div className="min-w-[30px] h-9 w-9 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center shadow-md">
-                <span className="text-sm font-bold text-white">
+          {/* User Menu */}
+          <div className="relative shrink-0" id="user-menu-container">
+            <button
+              onClick={() => setShowUserMenu((prev) => !prev)}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all duration-200"
+            >
+              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center shadow-md shrink-0">
+                <span className="text-xs font-bold text-white">
                   {userData ? getInitials(userData.name) : "U"}
                 </span>
               </div>
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              <div className="hidden sm:block text-left">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 leading-tight">
                   {userData?.name || "User"}
                 </p>
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                  {userData?.jobRole || "Role"} • {userData?.email || "user@abacco.com"}
+                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium leading-tight">
+                  {userData?.jobRole || "Role"}
                 </p>
               </div>
-            </div>
-
-            {/* Logout Button */}
-            <button
-              onClick={() => setShowLogoutModal(true)}
-              className="
-                w-full flex items-center gap-3
-                px-3 py-3 rounded-xl text-sm font-medium
-                text-red-600 dark:text-red-400
-                hover:bg-red-50 dark:hover:bg-red-900/20
-                transition-all duration-200
-                group/logout
-              "
-            >
-              <div className="min-w-[20px] flex justify-center">
-                <LogOut size={20} strokeWidth={2} />
-              </div>
-              <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 font-semibold whitespace-nowrap">
-                Logout
-              </span>
+              <ChevronDown
+                size={14}
+                className={`text-slate-400 transition-transform duration-200 hidden sm:block ${showUserMenu ? "rotate-180" : ""}`}
+              />
             </button>
+
+            {/* Dropdown */}
+            {showUserMenu && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-emerald-100 dark:border-emerald-900/50 overflow-hidden z-50">
+                {/* User Info */}
+                <div className="px-4 py-3 border-b border-emerald-100 dark:border-emerald-900/50">
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {userData?.name || "User"}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    {userData?.email || "user@abacco.com"}
+                  </p>
+                  <span className="inline-block mt-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400">
+                    {userData?.jobRole || "Role"}
+                  </span>
+                </div>
+
+                {/* Logout */}
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowLogoutModal(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <LogOut size={16} strokeWidth={2} />
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
+
+          {/* Mobile hamburger */}
+          <button
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="lg:hidden p-2 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+          >
+            {mobileMenuOpen ? (
+              <X size={20} className="text-slate-600 dark:text-slate-400" />
+            ) : (
+              <Menu size={20} className="text-slate-600 dark:text-slate-400" />
+            )}
+          </button>
         </div>
 
-        {/* Decorative element */}
-        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-green-500/10 rounded-full blur-3xl -z-10" />
-        <div className="absolute bottom-0 left-0 w-40 h-40 bg-gradient-to-tr from-green-500/10 to-emerald-500/10 rounded-full blur-3xl -z-10" />
-      </aside>
+        {/* Mobile Nav Dropdown */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden border-t border-emerald-100 dark:border-emerald-900/50 bg-white dark:bg-slate-900 px-4 py-3 space-y-1 shadow-lg">
+            {filteredNavItems.map((item) => (
+              <NavLink
+                key={item.name}
+                to={item.path}
+                onClick={() => setMobileMenuOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200
+                  ${
+                    isActive
+                      ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md shadow-emerald-500/30"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600"
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <item.icon size={18} strokeWidth={isActive ? 2.5 : 2} />
+                    {item.name}
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        )}
+      </header>
     </>
   );
 }

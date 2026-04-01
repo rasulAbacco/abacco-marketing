@@ -741,11 +741,11 @@ const stopCampaign = async (id) => {
                               <h3 className="font-bold text-slate-900 text-sm">
                                 {campaign.name?.replace(/\s*\(\d+\)\s*$/, "")}
                               </h3>
-                              {campaign.fromNames?.length > 0 && (
+                              {/* {campaign.fromNames?.length > 0 && (
                                 <p className="text-xs text-slate-600 mt-0.5 font-medium">
                                   {campaign.fromNames.join(", ")}
                                 </p>
-                              )}
+                              )} */}
                             </div>
                           </div>
                         </td>

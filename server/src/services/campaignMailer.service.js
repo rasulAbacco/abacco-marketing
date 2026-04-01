@@ -1047,7 +1047,6 @@ export async function sendBulkCampaign(campaignId) {
 /* ─────────────────────────────────────────────────────────────
    UNCHANGED: updateCampaignStatus
 ───────────────────────────────────────────────────────────── */
-
 async function updateCampaignStatus(campaignId) {
   const stats = await prisma.campaignRecipient.groupBy({
     by:    ["status"],
@@ -1060,15 +1059,21 @@ async function updateCampaignStatus(campaignId) {
     counts[row.status] = row._count.status;
   }
 
+  const campaign = await prisma.campaign.findUnique({
+    where:  { id: campaignId },
+    select: { userId: true, status: true },  // ✅ also fetch current status
+  });
+
+  // ✅ FIX: If user manually stopped the campaign, NEVER overwrite it
+  if (campaign?.status === "stopped") {
+    console.log(`⏹ Campaign ${campaignId} was stopped — skipping status update`);
+    return;
+  }
+
   let finalStatus;
   if (counts.pending > 0)                              finalStatus = "sending";
   else if (counts.sent === 0 && counts.failed > 0)     finalStatus = "failed";
   else                                                  finalStatus = "completed";
-
-  const campaign = await prisma.campaign.findUnique({
-    where:  { id: campaignId },
-    select: { userId: true },
-  });
 
   await prisma.campaign.update({
     where: { id: campaignId },
@@ -1078,12 +1083,10 @@ async function updateCampaignStatus(campaignId) {
   if (campaign?.userId) {
     const ranges = ["today", "week", "month"];
     ranges.forEach(range => cache.del(`dashboard:${campaign.userId}:${range}`));
-
     const keys = cache.keys();
     keys.forEach(key => {
       if (key.startsWith(`dashboard:${campaign.userId}:`)) cache.del(key);
     });
-
     console.log(`🔥 Cache invalidated for user ${campaign.userId}`);
   }
 
