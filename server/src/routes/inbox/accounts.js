@@ -246,6 +246,18 @@ router.post("/", protect, async (req, res) => {
     if (exists)
       return res.status(400).json({ error: "Account already exists" });
 
+    // ✅ Enforce 80-account limit per user
+    const accountCount = await prisma.emailAccount.count({
+      where: { userId: req.user.id },
+    });
+    if (accountCount >= 80) {
+      return res.status(403).json({
+        error: "Account limit reached. You can add a maximum of 80 email accounts.",
+        limitReached: true,
+        count: accountCount,
+      });
+    }
+
     /* -------------------------
        VERIFY IMAP (Incoming)
     -------------------------- */
@@ -703,4 +715,75 @@ router.patch("/:id/sender-name", protect, async (req, res) => {
     });
   }
 });
+/* ============================================================
+   🔑 PATCH /accounts/:id/app-password → UPDATE APP PASSWORD
+   (Re-verifies IMAP & SMTP before saving)
+   ============================================================ */
+router.patch("/:id/app-password", protect, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { newPassword } = req.body;
+
+    if (!newPassword || !newPassword.trim()) {
+      return res.status(400).json({ success: false, error: "New password is required." });
+    }
+
+    // Verify ownership
+    const account = await prisma.emailAccount.findFirst({
+      where: { id, userId: req.user.id },
+    });
+
+    if (!account) {
+      return res.status(404).json({ success: false, error: "Account not found." });
+    }
+
+    // Re-verify IMAP with new password
+    const imap = new ImapFlow({
+      host: account.imapHost,
+      port: account.imapPort,
+      secure: account.imapPort === 993,
+      auth: { user: account.imapUser || account.email, pass: newPassword.trim() },
+      tls: { rejectUnauthorized: false },
+    });
+    imap.on("error", (err) => console.error("⚠️ IMAP verify error:", err.message));
+
+    try {
+      await imap.connect();
+      await imap.logout();
+    } catch (err) {
+      return res.status(400).json({ success: false, error: "IMAP verification failed: " + err.message });
+    }
+
+    // Re-verify SMTP with new password
+    const transporter = nodemailer.createTransport({
+      host: account.smtpHost,
+      port: account.smtpPort,
+      secure: account.smtpPort === 465,
+      auth: { user: account.smtpUser || account.email, pass: newPassword.trim() },
+      requireTLS: account.smtpPort === 587,
+      tls: { rejectUnauthorized: false, minVersion: "TLSv1.2" },
+    });
+
+    try {
+      await transporter.verify();
+    } catch (err) {
+      return res.status(400).json({ success: false, error: "SMTP verification failed: " + err.message });
+    }
+
+    // Save new password
+    await prisma.emailAccount.update({
+      where: { id },
+      data: { encryptedPass: newPassword.trim() },
+    });
+
+    // Clear cache
+    cache.del(`accounts:${req.user.id}`);
+
+    return res.json({ success: true, message: "App password updated successfully." });
+  } catch (err) {
+    console.error("❌ app-password update error:", err);
+    return res.status(500).json({ success: false, error: "Failed to update password." });
+  }
+});
+
 export default router;

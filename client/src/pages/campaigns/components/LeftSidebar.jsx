@@ -133,11 +133,21 @@ export default function ModernSidebar({
 
   // Group → accounts map
   const ungroupedAccounts = accountsWithUnread.filter(
-    (a) => !a.groupId || !accountGroups.find((g) => g.id === a.groupId)
+    (a) => !a.groupId || !accountGroups.find((g) => String(g.id) === String(a.groupId))
   );
 
+  // When a group is selected, show only that group + ungrouped accounts.
+  // When no group is selected, show everything.
+  // Normalize IDs to strings so number/string mismatches never cause empty results.
+  const visibleGroups = selectedGroupId
+    ? accountGroups.filter((g) => String(g.id) === String(selectedGroupId))
+    : accountGroups;
+
+  // Ungrouped accounts appear in all views (they belong to no group)
+  const showUngrouped = ungroupedAccounts.length > 0;
+
   const getGroupAccounts = (groupId) =>
-    accountsWithUnread.filter((a) => a.groupId === groupId);
+    accountsWithUnread.filter((a) => String(a.groupId) === String(groupId));
 
   const getGroupUnread = (groupId) =>
     getGroupAccounts(groupId).reduce((sum, a) => sum + (a.unreadCount || 0), 0);
@@ -419,12 +429,12 @@ export default function ModernSidebar({
       {!isCollapsed && (
         <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
           {/* Groups */}
-          {accountGroups.map((group) => (
+          {visibleGroups.map((group) => (
             <GroupRow key={group.id} group={group} />
           ))}
 
-          {/* Ungrouped accounts (if any) */}
-          {ungroupedAccounts.length > 0 && (
+          {/* Ungrouped accounts — always shown as they belong to no group */}
+          {showUngrouped && (
             <div className="mt-2">
               {accountGroups.length > 0 && (
                 <div className="px-3 py-1 flex items-center gap-2">
@@ -442,7 +452,7 @@ export default function ModernSidebar({
           )}
 
           {/* Empty state */}
-          {accountGroups.length === 0 && ungroupedAccounts.length === 0 && (
+          {visibleGroups.length === 0 && ungroupedAccounts.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
               <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center mb-3">
                 <Folder className="w-6 h-6 text-emerald-400" />

@@ -1,6 +1,7 @@
 // TopNavbar.jsx - Converted from Sidebar to Top Navigation Bar
-import { NavLink, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import React from "react";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -14,12 +15,16 @@ import {
   ChevronDown,
   Menu,
   X,
+  Folder,
 } from "lucide-react";
+import { api } from "../../pages/utils/api";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const navigationItems = [
   { name: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
   { name: "Leads", icon: Users, path: "/leads" },
-  { name: "Inbox", icon: Mail, path: "/inbox" },
+  // "Inbox" is handled separately with a group dropdown
   { name: "Campaigns", icon: Megaphone, path: "/campaigns" },
   { name: "Pitches", icon: FileText, path: "/pitches" },
   { name: "Analytics", icon: BarChart3, path: "/analytics" },
@@ -31,7 +36,24 @@ export default function TopNavbar() {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showInboxDropdown, setShowInboxDropdown] = useState(false);
+  const [accountGroups, setAccountGroups] = useState([]);
+  const inboxDropdownRef = useRef(null);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const isInboxActive = location.pathname.startsWith("/inbox");
+
+  // Fetch account groups for inbox dropdown
+  const fetchGroups = async () => {
+    try {
+      const res = await api.get(`${API_BASE_URL}/api/account-groups`);
+      const data = Array.isArray(res.data?.data) ? res.data.data : [];
+      setAccountGroups(data);
+    } catch (err) {
+      console.error("Failed to fetch groups for navbar:", err);
+    }
+  };
 
   // Fetch user data from localStorage on mount
   useEffect(() => {
@@ -40,19 +62,26 @@ export default function TopNavbar() {
       try {
         const parsedUser = JSON.parse(user);
         setUserData(parsedUser);
-        console.log("TopNavbar - User data:", parsedUser);
-        console.log("TopNavbar - User role:", parsedUser.jobRole);
       } catch (error) {
         console.error("Error parsing user data:", error);
       }
     }
+    fetchGroups();
   }, []);
 
-  // Close user menu when clicking outside
+  // Re-fetch groups whenever we navigate to inbox (groups may have changed)
+  useEffect(() => {
+    if (isInboxActive) fetchGroups();
+  }, [location.pathname]);
+
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (!e.target.closest("#user-menu-container")) {
         setShowUserMenu(false);
+      }
+      if (inboxDropdownRef.current && !inboxDropdownRef.current.contains(e.target)) {
+        setShowInboxDropdown(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -157,25 +186,100 @@ export default function TopNavbar() {
           {/* Desktop Nav Links */}
           <nav className="hidden lg:flex items-center gap-1">
             {filteredNavItems.map((item) => (
-              <NavLink
-                key={item.name}
-                to={item.path}
-                className={({ isActive }) =>
-                  `flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 whitespace-nowrap
+              <React.Fragment key={item.name}>
+                <NavLink
+                  to={item.path}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 whitespace-nowrap
+                    ${
+                      isActive
+                        ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md shadow-emerald-500/40"
+                        : "text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400"
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <item.icon size={16} strokeWidth={isActive ? 2.5 : 2} />
+                      <span className="font-semibold">{item.name}</span>
+                    </>
+                  )}
+                </NavLink>
+
+                {/* Inbox dropdown inserted right after Leads */}
+                {item.name === "Leads" && (
+                  <div className="relative" ref={inboxDropdownRef}>
+              <button
+                onClick={() => {
+                  setShowInboxDropdown((prev) => !prev);
+                  if (!showInboxDropdown) fetchGroups();
+                }}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 whitespace-nowrap
                   ${
-                    isActive
+                    isInboxActive
                       ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md shadow-emerald-500/40"
                       : "text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400"
-                  }`
-                }
+                  }`}
               >
-                {({ isActive }) => (
-                  <>
-                    <item.icon size={16} strokeWidth={isActive ? 2.5 : 2} />
-                    <span className="font-semibold">{item.name}</span>
-                  </>
+                <Mail size={16} strokeWidth={isInboxActive ? 2.5 : 2} />
+                <span className="font-semibold">Inbox</span>
+                <ChevronDown
+                  size={13}
+                  className={`transition-transform duration-200 ${showInboxDropdown ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {showInboxDropdown && (
+                <div className="absolute left-0 top-full mt-2 w-52 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-emerald-100 dark:border-emerald-900/50 overflow-hidden z-50">
+                  <div className="px-3 py-2 border-b border-emerald-100 dark:border-emerald-900/50">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Select Group
+                    </p>
+                  </div>
+
+                  {accountGroups.length > 0 && (
+                    <div>
+                      {accountGroups.map((group) => (
+                        <button
+                          key={group.id}
+                          onClick={() => {
+                            navigate(`/inbox?groupId=${group.id}`);
+                            setShowInboxDropdown(false);
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                        >
+                          <div
+                            className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: group.color || "#10b981" }}
+                          >
+                            <Folder className="w-3.5 h-3.5 text-white" />
+                          </div>
+                          <span className="truncate">{group.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* All Accounts — always last */}
+                  <div className="border-t border-slate-100 dark:border-slate-700">
+                    <button
+                      onClick={() => {
+                        navigate("/inbox");
+                        setShowInboxDropdown(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                    >
+                      <div className="w-6 h-6 rounded-md bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center flex-shrink-0">
+                        <Mail className="w-3.5 h-3.5 text-white" />
+                      </div>
+                      <span>All Accounts</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
                 )}
-              </NavLink>
+              </React.Fragment>
             ))}
           </nav>
 
@@ -252,26 +356,56 @@ export default function TopNavbar() {
         {mobileMenuOpen && (
           <div className="lg:hidden border-t border-emerald-100 dark:border-emerald-900/50 bg-white dark:bg-slate-900 px-4 py-3 space-y-1 shadow-lg">
             {filteredNavItems.map((item) => (
-              <NavLink
-                key={item.name}
-                to={item.path}
-                onClick={() => setMobileMenuOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200
-                  ${
-                    isActive
-                      ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md shadow-emerald-500/30"
-                      : "text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600"
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <item.icon size={18} strokeWidth={isActive ? 2.5 : 2} />
-                    {item.name}
-                  </>
+              <React.Fragment key={item.name}>
+                <NavLink
+                  to={item.path}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200
+                    ${
+                      isActive
+                        ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md shadow-emerald-500/30"
+                        : "text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600"
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <item.icon size={18} strokeWidth={isActive ? 2.5 : 2} />
+                      {item.name}
+                    </>
+                  )}
+                </NavLink>
+
+                {/* Inbox section in mobile — right after Leads */}
+                {item.name === "Leads" && (
+                  <div>
+                    <button
+                      onClick={() => { navigate("/inbox"); setMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200
+                        ${isInboxActive && !location.search ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md" : "text-slate-600 hover:bg-emerald-50 hover:text-emerald-600"}`}
+                    >
+                      <Mail size={18} />
+                      Inbox
+                    </button>
+                    {accountGroups.map((group) => (
+                      <button
+                        key={group.id}
+                        onClick={() => { navigate(`/inbox?groupId=${group.id}`); setMobileMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 transition-all duration-200"
+                      >
+                        <div
+                          className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: group.color || "#10b981" }}
+                        >
+                          <Folder size={12} className="text-white" />
+                        </div>
+                        {group.name}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </NavLink>
+              </React.Fragment>
             ))}
           </div>
         )}

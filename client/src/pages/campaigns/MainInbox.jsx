@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import ModernSidebar from "./components/LeftSidebar.jsx";
 import InboxHeader from "./components/Inboxheader.jsx";
 import ConversationList from "./components/EmailList.jsx";
@@ -14,9 +15,14 @@ export default function InboxMain() {
   // ── Sidebar ──────────────────────────────────────────────
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // ── URL params ───────────────────────────────────────────
+  const [searchParams] = useSearchParams();
+
   // ── Groups (folders) ─────────────────────────────────────
   const [accountGroups, setAccountGroups] = useState([]);
-  const [selectedGroupId, setSelectedGroupId] = useState(null);
+  // Always derive selectedGroupId from the URL so navigation is instant
+  const urlGroupId = searchParams.get("groupId") ? String(searchParams.get("groupId")) : null;
+  const [selectedGroupId, setSelectedGroupId] = useState(urlGroupId);
 
   // ── Add-account flow ─────────────────────────────────────
   // Step 1: show GroupSelectModal  (showGroupPicker = true)
@@ -76,13 +82,43 @@ export default function InboxMain() {
   const pollingIntervalRef = useRef(null);
 
   // ──────────────────────────────────────────────────────────
+  // SYNC GROUP FROM URL — fires whenever ?groupId changes
+  // ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const newGroupId = searchParams.get("groupId") ? String(searchParams.get("groupId")) : null;
+    setSelectedGroupId(newGroupId);
+
+    if (accounts.length === 0) return; // will be handled after fetchAccounts
+
+    if (newGroupId) {
+      // Auto-select first account of the newly chosen group
+      const groupAccs = accounts.filter((a) => String(a.groupId) === newGroupId);
+      if (groupAccs.length > 0) {
+        setSelectedAccount(groupAccs[0]);
+        setSelectedFolder("inbox");
+        setSelectedConversation(null);
+        changeView("inbox");
+      }
+    } else {
+      // "All Accounts" — select the very first account
+      if (accounts.length > 0) {
+        setSelectedAccount(accounts[0]);
+        setSelectedFolder("inbox");
+        setSelectedConversation(null);
+        changeView("inbox");
+      }
+    }
+  }, [searchParams]);
+
+
+
+  // ──────────────────────────────────────────────────────────
   // MOUNT
   // ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetchGroups();
     fetchAccounts();
   }, []);
-
   // ──────────────────────────────────────────────────────────
   // FETCH GROUPS
   // ──────────────────────────────────────────────────────────
@@ -124,10 +160,24 @@ export default function InboxMain() {
         })
       );
 
-      setAccounts(accountsWithUnread);
+      // Normalize all account groupIds to strings for consistent comparison
+      const normalizedAccounts = accountsWithUnread.map((a) => ({
+        ...a,
+        groupId: a.groupId ? String(a.groupId) : null,
+      }));
+      setAccounts(normalizedAccounts);
 
-      if (!selectedAccount && accountsWithUnread.length > 0) {
-        setSelectedAccount(accountsWithUnread[0]);
+      // Auto-select first account based on active group from URL
+      const activeGroupId = searchParams.get("groupId") ? String(searchParams.get("groupId")) : null;
+      if (activeGroupId) {
+        const groupAccs = normalizedAccounts.filter((a) => a.groupId === activeGroupId);
+        if (groupAccs.length > 0) {
+          setSelectedAccount(groupAccs[0]);
+        } else if (normalizedAccounts.length > 0) {
+          setSelectedAccount(normalizedAccounts[0]);
+        }
+      } else if (!selectedAccount && normalizedAccounts.length > 0) {
+        setSelectedAccount(normalizedAccounts[0]);
       }
     } catch (error) {
       console.error("Error fetching accounts:", error);
@@ -343,7 +393,7 @@ export default function InboxMain() {
 
   const handleMessageSent = (conversationId) => {
     if (activeView === "today") {
-      setConversations((prev) => prev.filter((c) => c.conversationId !== conversationId));
+      conversationId((prev) => prev.filter((c) => c.conversationId !== conversationId));
       if (selectedConversation?.conversationId === conversationId) setSelectedConversation(null);
     } else {
       fetchConversations(true);
@@ -405,26 +455,7 @@ export default function InboxMain() {
           onMonthFilterChange={handleMonthFilterChange}
         />
 
-        {isScheduleMode && (
-          <div className="px-4 py-3 border-b bg-gradient-to-r from-emerald-50 to-teal-50 flex items-center justify-between shadow-sm">
-            <span className="text-sm text-emerald-700 font-medium">{selectedConversations.length} selected</span>
-            <div className="flex gap-2">
-              <button
-                disabled={selectedConversations.length === 0}
-                onClick={() => setShowScheduleModal(true)}
-                className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-lg disabled:opacity-50 font-medium hover:shadow-lg shadow-emerald-500/30 transition-all transform hover:scale-105"
-              >
-                Schedule
-              </button>
-              <button
-                onClick={() => { setIsScheduleMode(false); setSelectedConversations([]); }}
-                className="px-4 py-1.5 border border-emerald-300 rounded-lg text-emerald-700 hover:bg-emerald-50 font-medium transition-all"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
+       
 
         <div className="flex-1 flex overflow-hidden">
           <div className={`${selectedConversation ? "hidden lg:flex" : "flex"} w-full lg:w-96 flex-col`}>
@@ -477,7 +508,7 @@ export default function InboxMain() {
         />
       )}
 
-      {showScheduleModal && (
+      {ScheduleModal && (
         <ScheduleModal
           isOpen={showScheduleModal}
           selectedAccount={selectedAccount}

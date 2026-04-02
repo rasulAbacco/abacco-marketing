@@ -7,6 +7,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function AddAccountManager({ onClose, onAccountAdded, pendingGroup }) {
   const [accounts, setAccounts] = useState([]);
+  const [totalCount, setTotalCount] = useState(0); // ✅ Total accounts (unfiltered) for limit tracking
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [form, setForm] = useState({
     userId: 1,
@@ -36,6 +37,13 @@ export default function AddAccountManager({ onClose, onAccountAdded, pendingGrou
   const [editingSenderName, setEditingSenderName] = useState(null);
   const [tempSenderName, setTempSenderName] = useState("");
 
+  // ✏️ Edit account modal state
+  const [editingAccount, setEditingAccount] = useState(null); // account object being edited
+  const [editForm, setEditForm] = useState({ senderName: "", newPassword: "", confirmPassword: "" });
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState(null);
+  const [showEditPassword, setShowEditPassword] = useState(false);
+
   useEffect(() => {
     fetchAccounts();
   }, []);
@@ -51,6 +59,9 @@ const fetchAccounts = async () => {
 
     if (res.data?.success && Array.isArray(res.data.data)) {
       const all = res.data.data;
+
+      // ✅ Always track the TOTAL count (before group filtering) for limit enforcement
+      setTotalCount(all.length);
 
       if (pendingGroup?.groupId) {
         // ✅ Show accounts for this group  +  ungrouped accounts (no groupId)
@@ -137,6 +148,53 @@ const addAccount = async (e) => {
     } catch (err) {
       console.error("Failed to update sender name:", err);
       setError("Failed to update sender name");
+    }
+  };
+
+  // ✏️ Open edit modal pre-filled with account data
+  const openEditModal = (e, acc) => {
+    e.stopPropagation();
+    setEditingAccount(acc);
+    setEditForm({ senderName: acc.senderName || "", newPassword: "", confirmPassword: "" });
+    setEditError(null);
+    setShowEditPassword(false);
+  };
+
+  // ✏️ Save changes (password and/or sender name)
+  const saveAccountEdit = async () => {
+    setEditError(null);
+
+    if (editForm.newPassword && editForm.newPassword !== editForm.confirmPassword) {
+      setEditError("Passwords do not match.");
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      // Update sender name if changed
+      if (editForm.senderName.trim() !== (editingAccount.senderName || "")) {
+        await api.patch(`${API_BASE_URL}/api/accounts/${editingAccount.id}/sender-name`, {
+          senderName: editForm.senderName.trim(),
+        });
+      }
+
+      // Update password if provided
+      if (editForm.newPassword) {
+        await api.patch(`${API_BASE_URL}/api/accounts/${editingAccount.id}/app-password`, {
+          newPassword: editForm.newPassword,
+        });
+      }
+
+      // Refresh account list
+      await fetchAccounts();
+      setShowSuccessMessage("✅ Account updated successfully!");
+      setTimeout(() => setShowSuccessMessage(""), 2500);
+      setEditingAccount(null);
+    } catch (err) {
+      console.error("Edit error:", err);
+      setEditError(err.response?.data?.error || "Failed to update account.");
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -287,6 +345,29 @@ const logoutAccount = async () => {
             </div>
           )}
 
+          {/* ✅ Account limit warnings */}
+          {totalCount >= 80 ? (
+            <div className="mb-4 px-4 py-3 bg-red-50 border border-red-300 rounded-xl flex items-start gap-3">
+              <span className="text-red-500 text-lg mt-0.5">🚫</span>
+              <div>
+                <p className="text-sm font-semibold text-red-700">Account Limit Reached</p>
+                <p className="text-xs text-red-600 mt-0.5">
+                  You have reached the maximum limit of <strong>80 email accounts</strong>. Please remove an existing account to add a new one.
+                </p>
+              </div>
+            </div>
+          ) : totalCount >= 70 ? (
+            <div className="mb-4 px-4 py-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-3">
+              <span className="text-amber-500 text-lg mt-0.5">⚠️</span>
+              <div>
+                <p className="text-sm font-semibold text-amber-700">Approaching Account Limit</p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  You have used <strong>{totalCount} of 80</strong> accounts. Only <strong>{80 - totalCount}</strong> account{80 - totalCount === 1 ? "" : "s"} remaining.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
               {error}
@@ -436,15 +517,23 @@ const logoutAccount = async () => {
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        confirmLogout(acc.id);
-                      }}
-                      className="px-3 py-1 bg-red-600 text-white rounded text-sm"
-                    >
-                      Logout
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={(e) => openEditModal(e, acc)}
+                        className="px-3 py-1 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700"
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirmLogout(acc.id);
+                        }}
+                        className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                      >
+                        Logout
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -649,13 +738,127 @@ const logoutAccount = async () => {
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-md hover:from-emerald-700 hover:to-green-700"
-                disabled={loading}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-md hover:from-emerald-700 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading || totalCount >= 80}
               >
-                {loading ? "Adding..." : "Add Account"}
+                {loading ? "Adding..." : totalCount >= 80 ? "Limit Reached (80/80)" : "Add Account"}
               </button>
             </div>
           </form>
+
+          {/* ✏️ Edit Account Modal */}
+          {editingAccount && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+                <div className="flex justify-between items-center mb-5">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800">Edit Account</h3>
+                    <p className="text-sm text-slate-500 mt-0.5">{editingAccount.email}</p>
+                  </div>
+                  <button
+                    onClick={() => setEditingAccount(null)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {editError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-700 rounded-lg text-sm">
+                    {editError}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {/* Sender Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Sender Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.senderName}
+                      onChange={(e) => setEditForm({ ...editForm, senderName: e.target.value })}
+                      placeholder="e.g. John from Acme"
+                      className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 text-sm"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">This name appears in outgoing emails.</p>
+                  </div>
+
+                  {/* New App Password */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      New App Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showEditPassword ? "text" : "password"}
+                        value={editForm.newPassword}
+                        onChange={(e) => setEditForm({ ...editForm, newPassword: e.target.value })}
+                        placeholder="Leave blank to keep current password"
+                        className="w-full p-2.5 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEditPassword(!showEditPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+                      >
+                        {showEditPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {editingAccount.provider === "gmail" || editingAccount.provider === "gsuite"
+                        ? "Gmail requires an App Password if 2FA is enabled."
+                        : editingAccount.provider === "zoho"
+                        ? "Zoho requires an App Password from your Zoho settings."
+                        : "Enter the app-specific password from your email provider."}
+                    </p>
+                  </div>
+
+                  {/* Confirm New Password */}
+                  {editForm.newPassword && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Confirm New Password
+                      </label>
+                      <input
+                        type={showEditPassword ? "text" : "password"}
+                        value={editForm.confirmPassword}
+                        onChange={(e) => setEditForm({ ...editForm, confirmPassword: e.target.value })}
+                        placeholder="Re-enter new password"
+                        className={`w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-emerald-400 text-sm ${
+                          editForm.confirmPassword && editForm.newPassword !== editForm.confirmPassword
+                            ? "border-red-400 bg-red-50"
+                            : "border-gray-300"
+                        }`}
+                      />
+                      {editForm.confirmPassword && editForm.newPassword !== editForm.confirmPassword && (
+                        <p className="text-xs text-red-500 mt-1">Passwords do not match.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    onClick={() => setEditingAccount(null)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-slate-600 hover:bg-gray-50 text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveAccountEdit}
+                    disabled={editLoading || (editForm.newPassword && editForm.newPassword !== editForm.confirmPassword)}
+                    className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-lg hover:from-emerald-700 hover:to-green-700 text-sm disabled:opacity-50"
+                  >
+                    {editLoading ? "Saving…" : "Save Changes"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Logout confirmation modal */}
           {showLogoutConfirm && (
