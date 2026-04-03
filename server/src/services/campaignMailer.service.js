@@ -474,25 +474,6 @@ async function processAccountBatched({
 
     console.log(`📦 Account ${account.email}: processing batch of ${batch.length}`);
 
-        // ✅ DAILY LIMIT CHECK (ADD HERE)
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const todayCount = await prisma.emailMessage.count({
-      where: {
-        emailAccountId: account.id,
-        sentAt: {
-          gte: todayStart
-        }
-      }
-    });
-
-    const DAILY_LIMIT = 120;
-    if (todayCount >= DAILY_LIMIT) {
-      console.log(`🚫 Daily limit (${DAILY_LIMIT}/24hr) reached for ${account.email} — pausing until reset`);
-      return; // ❌ STOP using this account for today
-    }
-
   for (const recipient of batch) {
 
     // Inner stop check (between individual emails)

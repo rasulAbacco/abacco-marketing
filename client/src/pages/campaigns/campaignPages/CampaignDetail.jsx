@@ -45,35 +45,6 @@ const Button = ({ children, className = "", variant = "default", size = "md", ..
   );
 };
 
-// ── Countdown hook ──────────────────────────────────────────────────────────
-function useCountdown(unlockAt) {
-  const [remaining, setRemaining] = useState("");
-  useEffect(() => {
-    const calc = () => {
-      if (!unlockAt) { setRemaining(""); return; }
-      const diff = new Date(unlockAt) - Date.now();
-      if (diff <= 0) { setRemaining("Unlocking…"); return; }
-      const h = Math.floor(diff / 3_600_000);
-      const m = Math.floor((diff % 3_600_000) / 60_000);
-      const s = Math.floor((diff % 60_000) / 1_000);
-      setRemaining(`${h}h ${m}m ${s}s`);
-    };
-    calc();
-    const id = setInterval(calc, 1000);
-    return () => clearInterval(id);
-  }, [unlockAt]);
-  return remaining;
-}
-
-function DailyLimitBadge({ unlockAt }) {
-  const countdown = useCountdown(unlockAt);
-  return (
-    <span className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg border border-amber-200 whitespace-nowrap">
-      <Clock size={11} />
-      {countdown || "…"}
-    </span>
-  );
-}
 
 export default function CampaignDetail() {
   const [campaigns, setCampaigns] = useState([]);
@@ -94,7 +65,6 @@ export default function CampaignDetail() {
   const [showRecipientModal, setShowRecipientModal] = useState(false);
   const [campaignData, setCampaignData] = useState(null);
   const [followupLevel, setFollowupLevel] = useState(1);
-  const [dailyLimitLocked, setDailyLimitLocked] = useState([]); // [{ accountId, unlockAt }]
   const { id } = useParams();
 
 
@@ -204,30 +174,7 @@ export default function CampaignDetail() {
     fetchPitches();
   }, []);
 
-  // ── Poll daily-limit locked accounts ──────────────────────────────────────
-  useEffect(() => {
-    const fetchLocked = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        const res = await fetch(`${API_BASE_URL}/api/campaigns/accounts/locked`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.success) {
-          if (Array.isArray(data.data)) {
-            setDailyLimitLocked([]);
-          } else {
-            setDailyLimitLocked(data.data?.dailyLimitLocked || []);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch locked accounts", err);
-      }
-    };
-    fetchLocked();
-    const timer = setInterval(fetchLocked, 10000);
-    return () => clearInterval(timer);
-  }, []);
+  
 
   const getFromEmails = () => {
     if (!loadedCampaign || !Array.isArray(accounts)) return [];
@@ -295,21 +242,6 @@ export default function CampaignDetail() {
         message: "Please write a follow-up message before sending.",
       });
       return;
-    }
-
-    // 🔒 DAILY LIMIT CHECK — block follow-up if any sender account is at 120/24hr cap
-    if (loadedCampaign) {
-      let fromIds = [];
-      try { fromIds = JSON.parse(loadedCampaign.fromAccountIds || "[]"); } catch {}
-      const blockedAccount = dailyLimitLocked.find(d => fromIds.includes(d.accountId));
-      if (blockedAccount) {
-        setModal({
-          open: true,
-          type: "error",
-          message: `One or more sender accounts have reached the 120 emails/24hr limit. The account will auto-unlock — please try again after the countdown expires.`,
-        });
-        return;
-      }
     }
 
     setSendingFollowup(true);
@@ -690,33 +622,6 @@ export default function CampaignDetail() {
                 </p>
               </div>
 
-              {/* Daily-limit locked accounts warning */}
-              {loadedCampaign && (() => {
-                let fromIds = [];
-                try { fromIds = JSON.parse(loadedCampaign.fromAccountIds || "[]"); } catch {}
-                const lockedForThis = dailyLimitLocked.filter(d => fromIds.includes(d.accountId));
-                if (!lockedForThis.length) return null;
-                return (
-                  <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 space-y-2">
-                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
-                      <Lock size={12} />
-                      Daily Limit Reached (120/24hr)
-                    </p>
-                    {lockedForThis.map(d => {
-                      const accEmail = accounts.find(a => a.id === d.accountId)?.email || `Account #${d.accountId}`;
-                      return (
-                        <div key={d.accountId} className="flex items-center justify-between gap-2 bg-white/80 rounded-lg px-3 py-2 border border-amber-100">
-                          <p className="text-xs font-semibold text-slate-700 truncate flex-1">{accEmail}</p>
-                          <DailyLimitBadge unlockAt={d.unlockAt} />
-                        </div>
-                      );
-                    })}
-                    <p className="text-[11px] text-amber-600 font-medium">
-                      Follow-up sending is blocked until these accounts unlock automatically.
-                    </p>
-                  </div>
-                );
-              })()}
 
               {/* Subjects Count */}
               <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-4 rounded-xl border border-emerald-200">
