@@ -66,6 +66,13 @@ export default function CampaignList() {
                 <Zap className="text-slate-600" size={16} />
                 <span className="text-xs font-semibold text-emerald-700">Active</span>
               </div>
+              <div className="w-px h-4 bg-emerald-200"></div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="text-amber-500" size={14} />
+                <span className="text-xs font-semibold text-amber-700">
+                  📌 Note: Each Gmail account can send max <strong>120 emails / 24 hrs</strong>. Accounts auto-unlock after 24 hrs.
+                </span>
+              </div>
             </div>
           </div>
           

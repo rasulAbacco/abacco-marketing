@@ -492,6 +492,36 @@ export const createFollowupCampaign = async (req, res) => {
       });
     }
 
+    // 🔒 DAILY LIMIT CHECK for follow-up sender accounts
+    const DAILY_LIMIT = 120;
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const senderAccountIds = Object.keys(senderRecipientMap).map(Number);
+
+    for (const accountId of senderAccountIds) {
+      const count = await prisma.emailMessage.count({
+        where: {
+          emailAccountId: accountId,
+          sentAt: { gte: since24h }
+        }
+      });
+      if (count >= DAILY_LIMIT) {
+        const oldestMsg = await prisma.emailMessage.findFirst({
+          where: { emailAccountId: accountId, sentAt: { gte: since24h } },
+          orderBy: { sentAt: "asc" },
+          select: { sentAt: true }
+        });
+        const unlockAt = oldestMsg
+          ? new Date(new Date(oldestMsg.sentAt).getTime() + 24 * 60 * 60 * 1000)
+          : null;
+        return res.status(400).json({
+          success: false,
+          message: `One or more sender accounts have reached the 120 emails/24hr limit. Try again after ${unlockAt ? unlockAt.toLocaleString() : "24 hours"}.`,
+          dailyLimitReached: true,
+          unlockAt: unlockAt?.toISOString()
+        });
+      }
+    }
+
     let finalName = `${baseCampaign.name} (Followup)`;
 
     const existing = await prisma.campaign.findMany({
@@ -901,10 +931,13 @@ export const getCampaignProgress = async (req, res) => {
 
 /**
  * Get Locked Accounts
+ * Returns two categories:
+ *   - busy: account IDs currently used in a sending campaign
+ *   - dailyLimitLocked: accounts that hit the 120/24hr cap, with unlockAt timestamp
  */
 export const getLockedAccounts = async (req, res) => {
   try {
-    // 🔥 REDUCED CACHE TIME - 10 seconds for more real-time lock status
+    // 🔥 10-second cache for real-time lock status
     const cacheKey = `locked:${req.user.id}`;
     const cached = cache.get(cacheKey);
     if (cached) {
@@ -912,6 +945,7 @@ export const getLockedAccounts = async (req, res) => {
       return res.json({ success: true, data: cached });
     }
 
+    // ── 1. Campaign-busy lock (already sending) ─────────────────────────
     const sendingCampaigns = await prisma.campaign.findMany({
       where: { status: "sending" },
       include: {
@@ -921,23 +955,60 @@ export const getLockedAccounts = async (req, res) => {
       }
     });
 
-    const locked = new Set();
+    const busy = new Set();
 
     for (const campaign of sendingCampaigns) {
       try {
         JSON.parse(campaign.fromAccountIds || "[]")
-          .forEach(id => locked.add(Number(id)));
+          .forEach(id => busy.add(Number(id)));
       } catch {}
 
       campaign.recipients.forEach(r => {
-        if (r.accountId) locked.add(Number(r.accountId));
+        if (r.accountId) busy.add(Number(r.accountId));
       });
     }
 
-    cache.set(cacheKey, Array.from(locked), 10); // 10 seconds cache
+    // ── 2. Daily-limit lock (120 mails sent in last 24 hours) ───────────
+    const DAILY_LIMIT = 120;
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    // Find all accounts that belong to this user
+    const userAccounts = await prisma.emailAccount.findMany({
+      where: { userId: req.user.id },
+      select: { id: true }
+    });
+
+    const dailyLimitLocked = []; // [{ accountId, unlockAt }]
+
+    for (const acc of userAccounts) {
+      // Count emails sent in the last 24 hours
+      const recentMessages = await prisma.emailMessage.findMany({
+        where: {
+          emailAccountId: acc.id,
+          sentAt: { gte: since24h }
+        },
+        orderBy: { sentAt: "asc" },
+        select: { sentAt: true }
+      });
+
+      if (recentMessages.length >= DAILY_LIMIT) {
+        // The 24-hour window starts from the oldest message in the batch
+        const oldestSent = recentMessages[0].sentAt;
+        const unlockAt = new Date(new Date(oldestSent).getTime() + 24 * 60 * 60 * 1000);
+        dailyLimitLocked.push({ accountId: acc.id, unlockAt: unlockAt.toISOString() });
+      }
+    }
+
+    const result = {
+      busy: Array.from(busy),                // legacy — still an array of IDs
+      dailyLimitLocked,                      // [{ accountId, unlockAt }]
+      // Keep backward-compat: top-level `data` still returns busy IDs array
+    };
+
+    cache.set(cacheKey, result, 10);
     return res.json({
       success: true,
-      data: Array.from(locked)
+      data: result
     });
 
   } catch (err) {

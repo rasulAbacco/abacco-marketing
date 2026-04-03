@@ -80,6 +80,48 @@ const COLOR_FAMILIES = [
 
 const LIMIT_OPTIONS = [20, 30, 40, 50, 70, 80, 100, 150, 200];
 
+// ── Countdown hook: returns "Xh Ym Zs" until unlockAt ──────────────────────
+function useCountdown(unlockAt) {
+  const [remaining, setRemaining] = useState("");
+
+  useEffect(() => {
+    const calc = () => {
+      if (!unlockAt) { setRemaining(""); return; }
+      const diff = new Date(unlockAt) - Date.now();
+      if (diff <= 0) { setRemaining("Unlocking…"); return; }
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000) / 1_000);
+      setRemaining(`${h}h ${m}m ${s}s`);
+    };
+    calc();
+    const id = setInterval(calc, 1000);
+    return () => clearInterval(id);
+  }, [unlockAt]);
+
+  return remaining;
+}
+
+// ── Row shown for daily-limit-locked accounts ───────────────────────────────
+function DailyLimitLockedRow({ acc }) {
+  const countdown = useCountdown(acc.unlockAt);
+  return (
+    <div className="flex items-center gap-3 p-3 bg-amber-50/60 rounded-lg mb-2 border border-amber-200">
+      <Lock size={14} className="text-amber-500 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-slate-700 truncate">{acc.email}</p>
+        <p className="text-xs text-amber-700 font-medium">
+          120 emails/24hr limit reached
+        </p>
+      </div>
+      <div className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg border border-amber-200 whitespace-nowrap">
+        <Clock size={11} />
+        Unlocks in {countdown || "…"}
+      </div>
+    </div>
+  );
+}
+
 export default function CreateCampaign() {
   const [accounts, setAccounts] = useState([]);
   const [accountGroups, setAccountGroups] = useState([]);
@@ -98,7 +140,8 @@ export default function CreateCampaign() {
   const [nameError, setNameError] = useState("");
   const [showFromDropdown, setShowFromDropdown] = useState(false);
   const [showPitchDropdown, setShowPitchDropdown] = useState(false);
-  const [lockedAccounts, setLockedAccounts] = useState([]);
+  const [lockedAccounts, setLockedAccounts] = useState([]);          // busy (campaign sending)
+  const [dailyLimitLocked, setDailyLimitLocked] = useState([]);     // [{ accountId, unlockAt }]
   const [customLimits, setCustomLimits] = useState({});
 
   const [campaignType, setCampaignType] = useState("immediate");
@@ -209,8 +252,16 @@ export default function CreateCampaign() {
             return;
           }
           const data = await res.json();
-          if (data.success && Array.isArray(data.data)) {
-            setLockedAccounts(data.data);
+          if (data.success) {
+            // New shape: { busy: [...], dailyLimitLocked: [{ accountId, unlockAt }] }
+            // Backward-compat: old shape was just an array
+            if (Array.isArray(data.data)) {
+              setLockedAccounts(data.data);
+              setDailyLimitLocked([]);
+            } else {
+              setLockedAccounts(data.data?.busy || []);
+              setDailyLimitLocked(data.data?.dailyLimitLocked || []);
+            }
           }
         } catch (err) {
           console.error("Failed to fetch locked accounts", err);
@@ -224,9 +275,13 @@ export default function CreateCampaign() {
 
   useEffect(() => {
     if (campaignType === "immediate") {
-      setSelectedFroms(prev => prev.filter(id => !lockedAccounts.includes(id)));
+      const allLockedIds = [
+        ...lockedAccounts,
+        ...dailyLimitLocked.map(d => d.accountId),
+      ];
+      setSelectedFroms(prev => prev.filter(id => !allLockedIds.includes(id)));
     }
-  }, [lockedAccounts, campaignType]);
+  }, [lockedAccounts, dailyLimitLocked, campaignType]);
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -468,17 +523,35 @@ export default function CreateCampaign() {
     return total;
   };
 
+  // All account IDs locked by daily 120-email limit
+  const dailyLimitLockedIds = dailyLimitLocked.map(d => d.accountId);
+
   const availableAccounts =
     campaignType === "scheduled"
       ? accounts
-      : accounts.filter(acc => !lockedAccounts.includes(Number(acc.id)));
+      : accounts.filter(
+          acc =>
+            !lockedAccounts.includes(Number(acc.id)) &&
+            !dailyLimitLockedIds.includes(Number(acc.id))
+        );
 
   const lockedAccountsList =
     campaignType === "scheduled"
       ? []
       : accounts.filter(acc => lockedAccounts.includes(Number(acc.id)));
 
-  const lockedAccountsCount = lockedAccountsList.length;
+  // Accounts locked because they hit the 120 emails/24hr cap
+  const dailyLimitLockedList =
+    campaignType === "scheduled"
+      ? []
+      : accounts
+          .filter(acc => dailyLimitLockedIds.includes(Number(acc.id)))
+          .map(acc => {
+            const lockInfo = dailyLimitLocked.find(d => d.accountId === Number(acc.id));
+            return { ...acc, unlockAt: lockInfo?.unlockAt || null };
+          });
+
+  const lockedAccountsCount = lockedAccountsList.length + dailyLimitLockedList.length;
 
   const subjectCount = subject
     .split("\n")
@@ -758,24 +831,42 @@ export default function CreateCampaign() {
                   })()}
 
                   {/* Locked / In Use accounts */}
-                  {lockedAccountsList.length > 0 && (
+                  {(lockedAccountsList.length > 0 || dailyLimitLockedList.length > 0) && (
                     <div className="border-t border-emerald-200 p-3">
-                      <h4 className="text-xs font-bold text-red-700 uppercase tracking-wide mb-2 px-2 flex items-center gap-1.5">
-                        <Lock size={12} />
-                        Currently In Use (Unavailable)
-                      </h4>
-                      {lockedAccountsList.map(acc => (
-                        <div
-                          key={acc.id}
-                          className="flex items-center gap-3 p-3 bg-red-50/50 rounded-lg opacity-60 mb-2"
-                        >
-                          <Lock size={14} className="text-red-500" />
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold text-slate-700">{acc.email}</p>
-                            <p className="text-xs text-red-600 font-medium">Busy sending another campaign</p>
-                          </div>
-                        </div>
-                      ))}
+                      {/* Campaign-busy accounts */}
+                      {lockedAccountsList.length > 0 && (
+                        <>
+                          <h4 className="text-xs font-bold text-red-700 uppercase tracking-wide mb-2 px-2 flex items-center gap-1.5">
+                            <Lock size={12} />
+                            Currently In Use (Unavailable)
+                          </h4>
+                          {lockedAccountsList.map(acc => (
+                            <div
+                              key={acc.id}
+                              className="flex items-center gap-3 p-3 bg-red-50/50 rounded-lg opacity-60 mb-2"
+                            >
+                              <Lock size={14} className="text-red-500" />
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-slate-700">{acc.email}</p>
+                                <p className="text-xs text-red-600 font-medium">Busy sending another campaign</p>
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      )}
+
+                      {/* Daily-limit locked accounts */}
+                      {dailyLimitLockedList.length > 0 && (
+                        <>
+                          <h4 className="text-xs font-bold text-amber-700 uppercase tracking-wide mb-2 px-2 flex items-center gap-1.5 mt-2">
+                            <Clock size={12} />
+                            Daily Limit Reached (120 emails / 24 hrs)
+                          </h4>
+                          {dailyLimitLockedList.map(acc => (
+                            <DailyLimitLockedRow key={acc.id} acc={acc} />
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

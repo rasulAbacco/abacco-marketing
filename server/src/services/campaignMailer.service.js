@@ -1,21 +1,10 @@
 // campaignMailer.service.js — Batch-processing refactor
-// Fixes OOM crashes on large campaigns (1000–10000+ recipients)
-// by eliminating bulk in-memory loading of sentBodyHtml.
-//
-// Architecture:
-//   Campaign → per-account batch loop → DB-fetch 50 → send → fetch next 50
-//   For follow-ups: sentBodyHtml is loaded once per recipient at send-time,
-//   never pre-loaded into a Map for all recipients at once.
 
 import nodemailer from "nodemailer";
 import prisma from "../prismaClient.js";
 import { decrypt } from "../utils/crypto.js";
 import cache from "../utils/cache.js";
 
-/* ─────────────────────────────────────────────────────────────
-   UNCHANGED HELPERS
-   All original helper functions are preserved exactly.
-───────────────────────────────────────────────────────────── */
 
 function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
@@ -92,34 +81,19 @@ function buildSignature(account, senderRole, baseStyles = {}) {
   `;
 }
 
-/**
- * Extracts the original pitch content from a stored sentBodyHtml.
- * The stored HTML is a full email document with <table> wrapper and <style> tags.
- * We extract only the pitch body (no signature, no wrapper table, no style tags)
- * so it can be safely embedded as the "previous message" in a follow-up thread.
- *
- * KEY FIXES vs previous version:
- *  1. IE conditional comments stripped first (were interfering with body extraction)
- *  2. Signature stripping uses LAST-occurrence search, NOT a regex with `$` anchor.
- *     The old `[\s\S]*?<\/div>\s*$` wiped everything if the pitch body itself had
- *     any `<div style="margin-top:16px">` — a very common pattern in pitch templates.
- *  3. Multi-layer fallback so we never silently return "".
- */
+
 function extractBodyContent(fullHtml) {
   if (!fullHtml) return "";
 
   try {
     // ── Step 1: Strip markup that can confuse body extraction ──────────
     let html = fullHtml
-      // Remove IE conditional comments (contain <style> blocks that survive
-      // the next replace and can match as part of bodyContent)
+
       .replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, "")
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
 
-    // ── Step 2: Extract <body> content ────────────────────────────────
-    // Use greedy [\s\S]* (not *?) so we get the full body even when the
-    // pitch itself embeds HTML fragments containing "</body>" strings.
+
     const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
     const bodyContent = bodyMatch ? bodyMatch[1] : html;
 
@@ -145,9 +119,7 @@ function extractBodyContent(fullHtml) {
         } else {
           depth--;
           if (depth === 0) {
-            // Return the full inner content including the Regards/signature block.
-            // The original email's signature is part of the message the recipient
-            // saw and should appear in the quoted thread section unchanged.
+
             const inner = bodyContent.substring(innerStart, nextClose).trim();
             return inner || bodyContent.substring(innerStart, nextClose).trim();
           }
@@ -162,8 +134,7 @@ function extractBodyContent(fullHtml) {
   } catch (err) {
     console.error("extractBodyContent error:", err.message);
 
-    // ── Fallback B: catastrophic parse failure — strip all tags ───────
-    // Returns plain-text version so the thread still makes visual sense.
+
     try {
       return fullHtml
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
@@ -176,10 +147,6 @@ function extractBodyContent(fullHtml) {
   }
 }
 
-/**
- * Chunks an array into smaller arrays of given size.
- * Kept for any future use but batch fetching now happens at DB level.
- */
 function chunkArray(arr, size) {
   const chunks = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -291,16 +258,9 @@ function extractBaseStyles(html) {
   };
 }
 
-/* ─────────────────────────────────────────────────────────────
-   NEW: PRIVATE HELPERS FOR BATCH PROCESSING
-───────────────────────────────────────────────────────────── */
-
 const BATCH_SIZE = 50;
 
-/**
- * Creates and returns a configured Nodemailer transporter for an email account.
- * Extracted to avoid duplicating the transporter setup in both send paths.
- */
+
 function createTransporter(account, smtpPassword) {
   const domain = (account.email.split("@")[1] || "localhost").toLowerCase();
   return nodemailer.createTransport({
@@ -320,9 +280,6 @@ function createTransporter(account, smtpPassword) {
   });
 }
 
-/**
- * Decrypts the account password safely.
- */
 function decryptPassword(account) {
   let pass = account.encryptedPass;
   if (typeof pass === "string" && pass.includes(":")) {
@@ -331,11 +288,6 @@ function decryptPassword(account) {
   return pass;
 }
 
-/**
- * Walks the parentCampaignId chain to find the root (non-followup) campaign ID.
- * This is the campaign whose sentBodyHtml fields we read to build the thread.
- * Stops after MAX_LEVELS to guard against circular references.
- */
 async function resolveOriginalCampaignId(startId) {
   let currentId = startId;
   const MAX_LEVELS = 10;
@@ -360,10 +312,6 @@ async function resolveOriginalCampaignId(startId) {
   return currentId;
 }
 
-/**
- * Wraps pitch body in the standard HTML email shell.
- * Used for normal (non-followup) campaigns.
- */
 function buildNormalEmailHtml(body, signature, baseStyles) {
   return `<!DOCTYPE html>
 <html>
@@ -406,12 +354,6 @@ function buildNormalEmailHtml(body, signature, baseStyles) {
 </html>`;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   CORE: PER-ACCOUNT BATCH SENDER
-   Processes one email account's pending recipients in batches
-   of BATCH_SIZE, fetching directly from the database each
-   iteration so prior batches can be garbage-collected.
-───────────────────────────────────────────────────────────── */
 
 /**
  * @param {object}  opts
@@ -447,6 +389,10 @@ async function sendWithRetry(sendFn, retries = 3) {
 function isTemporaryError(err) {
   const msg = (err.message || "").toLowerCase();
 
+  // ❌ DO NOT retry Gmail daily limit error
+  if (msg.includes("daily user sending limit exceeded")) {
+    return false;
+  }
   return (
     msg.includes("timeout") ||
     msg.includes("connection") ||
@@ -472,6 +418,10 @@ async function processAccountBatched({
   const account = await prisma.emailAccount.findUnique({
     where: { id: Number(accountId) },
   });
+  if (!account || !account.smtpUser) {
+    console.error(`❌ Invalid account for sending: ${accountId}`);
+    return;
+  }
   if (!account) {
     console.warn(`⚠️ Account ${accountId} not found, skipping`);
     return;
@@ -488,10 +438,7 @@ async function processAccountBatched({
 
   console.log(`📤 Account ${account.email}: starting batch send (limit=${limit}/hr)`);
 
-  // ── BATCH LOOP ──────────────────────────────────────────────
-  // We always query the first N pending records; since we update
-  // each to "sent"/"failed" before moving on, the set shrinks
-  // naturally — no OFFSET needed.
+ 
   while (true) {
 
     // ── Stop check (outer — before fetching a new batch) ──────
@@ -504,9 +451,6 @@ async function processAccountBatched({
       return;
     }
 
-    // ── Fetch next batch from DB ───────────────────────────────
-    // Only pending rows for this account; fetched fresh each time
-    // so prior batch is eligible for GC once the loop body exits.
     const batch = await prisma.campaignRecipient.findMany({
       where: {
         campaignId,
@@ -530,120 +474,131 @@ async function processAccountBatched({
 
     console.log(`📦 Account ${account.email}: processing batch of ${batch.length}`);
 
-    // ── Process each recipient in the batch ───────────────────
-for (const recipient of batch) {
+        // ✅ DAILY LIMIT CHECK (ADD HERE)
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
 
-  // Inner stop check (between individual emails)
-  const innerCheck = await prisma.campaign.findUnique({
-    where: { id: campaignId },
-    select: { status: true },
-  });
+    const todayCount = await prisma.emailMessage.count({
+      where: {
+        emailAccountId: account.id,
+        sentAt: {
+          gte: todayStart
+        }
+      }
+    });
 
-  if (!innerCheck || innerCheck.status !== "sending") {
-    console.log(`⏹ Campaign ${campaignId} stopped mid-batch`);
-    return;
-  }
-
-  // ✅ CRITICAL FIX: PREVENT DOUBLE SEND
-  const alreadySent = await prisma.campaignRecipient.findUnique({
-    where: { id: recipient.id },
-    select: { status: true },
-  });
-
-  if (alreadySent?.status === "sent") {
-    console.log("⚠️ Already sent, skipping:", recipient.email);
-    continue;
-  }
-
-  // ── Rate-limit guard ─────────────────────────────────────
-  if (accountSendCount >= limit) {
-    const elapsed = Date.now() - accountStartTime;
-    if (elapsed < 3_600_000) {
-      const wait = 3_600_000 - elapsed;
-      console.log(
-        `⏳ ${account.email} hourly limit reached — waiting ${Math.ceil(wait / 60_000)}m`
-      );
-      await sleep(wait);
-    }
-    accountSendCount = 0;
-    accountStartTime = Date.now();
-  }
-
-  // ── Look up pre-computed subject + pitch for this recipient
-  const assignment = assignmentMap.get(recipient.id);
-  if (!assignment) {
-    console.warn(`⚠️ No assignment found for recipient ${recipient.id}, skipping`);
-    continue;
-  }
-
-  try {
-    if (campaign.sendType === "followup") {
-      await sendOneFollowup({
-        recipient,
-        account,
-        transporter,
-        fromEmail,
-        campaign,
-        assignment,
-        originalCampaignId,
-      });
-    } else {
-      await sendOneNormal({
-        recipient,
-        account,
-        transporter,
-        fromEmail,
-        campaign,
-        assignment,
-      });
+    const DAILY_LIMIT = 120;
+    if (todayCount >= DAILY_LIMIT) {
+      console.log(`🚫 Daily limit (${DAILY_LIMIT}/24hr) reached for ${account.email} — pausing until reset`);
+      return; // ❌ STOP using this account for today
     }
 
-    accountSendCount++;
+  for (const recipient of batch) {
 
-    if (!recipient._isRetry) {
-      await sleep(delayPerEmail);
+    // Inner stop check (between individual emails)
+    const innerCheck = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { status: true },
+    });
+
+    if (!innerCheck || innerCheck.status !== "sending") {
+      console.log(`⏹ Campaign ${campaignId} stopped mid-batch`);
+      return;
     }
 
-  } catch (err) {
-    console.error(`❌ Send failed → ${recipient.email}:`, err.message);
+    const alreadySent = await prisma.campaignRecipient.findUnique({
+      where: { id: recipient.id },
+      select: { status: true },
+    });
 
-    // 🔁 TEMPORARY ERROR → retry (SAFE VERSION)
-    if (
-      isTemporaryError(err) &&
-      (recipient.retryCount || 0) < 3 &&
-      !err.message.toLowerCase().includes("sent") // ✅ avoid duplicate resend
-    ) {
-      console.warn(`🔁 Retry scheduled: ${recipient.email}`);
-      recipient._isRetry = true;
-
-      await prisma.campaignRecipient.update({
-        where: { id: recipient.id },
-        data: {
-          status: "retry",
-          retryCount: { increment: 1 },
-          error: err.message,
-        },
-      });
-
-    } else {
-      await prisma.campaignRecipient.update({
-        where: { id: recipient.id },
-        data: {
-          status: "failed",
-          error: err.message,
-        },
-      });
+    if (alreadySent?.status === "sent") {
+      console.log("⚠️ Already sent, skipping:", recipient.email);
+      continue;
     }
+
+    // ── Rate-limit guard ─────────────────────────────────────
+    if (accountSendCount >= limit) {
+      const elapsed = Date.now() - accountStartTime;
+      if (elapsed < 3_600_000) {
+        const wait = 3_600_000 - elapsed;
+        console.log(
+          `⏳ ${account.email} hourly limit reached — waiting ${Math.ceil(wait / 60_000)}m`
+        );
+        await sleep(wait);
+      }
+      accountSendCount = 0;
+      accountStartTime = Date.now();
+    }
+
+    const assignment = assignmentMap.get(recipient.id);
+    if (!assignment) {
+      console.warn(`⚠️ No assignment found for recipient ${recipient.id}, skipping`);
+      continue;
+    }
+
+    try {
+      if (campaign.sendType === "followup") {
+        await sendOneFollowup({
+          recipient,
+          account,
+          transporter,
+          fromEmail,
+          campaign,
+          assignment,
+          originalCampaignId,
+        });
+      } else {
+        await sendOneNormal({
+          recipient,
+          account,
+          transporter,
+          fromEmail,
+          campaign,
+          assignment,
+        });
+      }
+
+      accountSendCount++;
+
+      if (!recipient._isRetry) {
+        await sleep(delayPerEmail);
+      }
+
+    } catch (err) {
+      console.error(`❌ Send failed → ${recipient.email}:`, err.message);
+
+      // 🔁 TEMPORARY ERROR → retry (SAFE VERSION)
+      if (
+        isTemporaryError(err) &&
+        (recipient.retryCount || 0) < 3 &&
+        !err.message.toLowerCase().includes("sent") // ✅ avoid duplicate resend
+      ) {
+        console.warn(`🔁 Retry scheduled: ${recipient.email}`);
+        recipient._isRetry = true;
+
+        await prisma.campaignRecipient.update({
+          where: { id: recipient.id },
+          data: {
+            status: "retry",
+            retryCount: { increment: 1 },
+            error: err.message,
+          },
+        });
+
+      } else {
+        await prisma.campaignRecipient.update({
+          where: { id: recipient.id },
+          data: {
+            status: "failed",
+            error: err.message,
+          },
+        });
+      }
+    }
+  }
+
   }
 }
-
-    // batch goes out of scope here — eligible for GC
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────
-   SEND: NORMAL CAMPAIGN EMAIL
-───────────────────────────────────────────────────────────── */
 
 async function sendOneNormal({
   recipient,
@@ -752,12 +707,6 @@ async function sendOneNormal({
   // console.log(`✅ ${account.email} → ${recipient.email}`);
 }
 
-/* ─────────────────────────────────────────────────────────────
-   SEND: FOLLOW-UP CAMPAIGN EMAIL
-   Key change: previousEmail is fetched PER RECIPIENT from the DB
-   right here — never pre-loaded into a bulk Map.
-───────────────────────────────────────────────────────────── */
-
 async function sendOneFollowup({
   recipient,
   account,
@@ -770,13 +719,14 @@ async function sendOneFollowup({
   const { subject: fallbackSubject, pitchBody: rawFollowupBody } = assignment;
 
   const followupBody = normalizeHtmlForEmail(rawFollowupBody);
+  if (!followupBody || followupBody.trim() === "") {
+    throw new Error("Follow-up body is empty");
+  }
   const baseStyles   = extractBaseStyles(followupBody);
   const signature    = buildSignature(account, campaign.senderRole, baseStyles);
   const followupWithSignature = followupBody + signature;
 
-  // ── Fetch ONLY this recipient's previous email from the DB ─
-  // This is the critical change: no bulk Map, no 250MB pre-load.
-  // One targeted query per email; totally fine under rate limiting.
+
   let prevEmail = null;
   if (originalCampaignId) {
     prevEmail = await prisma.campaignRecipient.findFirst({
@@ -797,132 +747,220 @@ async function sendOneFollowup({
   let subject;
   let html;
 
-  if (prevEmail) {
-    // Build threaded reply
-    let originalBody = extractBodyContent(prevEmail.sentBodyHtml);
+  // 🚨 STRICT FOLLOW-UP: ONLY send if original email exists
+  if (!prevEmail || !prevEmail.sentBodyHtml) {
+    console.warn(`❌ Skipping follow-up (no original email): ${recipient.email}`);
 
-    // Safety net: if extractBodyContent returned nothing but sentBodyHtml exists,
-    // strip the outer HTML envelope manually and use the raw body content.
-    // This prevents an empty thread body when pitch templates use margin-top:16px
-    // on their own divs (which confused the old signature-stripping regex).
-    if (!originalBody && prevEmail.sentBodyHtml) {
-      console.warn(`⚠️ extractBodyContent empty for ${recipient.email} — using raw-strip fallback`);
-      originalBody = prevEmail.sentBodyHtml
-        .replace(/<!DOCTYPE[^>]*>/gi, "")
-        .replace(/<html[^>]*>/gi, "").replace(/<\/html>/gi, "")
-        .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
-        .replace(/<body[^>]*>/gi, "").replace(/<\/body>/gi, "")
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-        .replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, "")
-        .trim();
+    await prisma.campaignRecipient.update({
+      where: { id: recipient.id },
+      data: {
+        status: "failed",
+        error: "No original email found for follow-up"
+      }
+    });
+
+    return; // 🚨 STOP sending completely
+  }
+
+  // ✅ Build threaded reply ONLY for valid recipients
+  let originalBody = extractBodyContent(prevEmail.sentBodyHtml);
+
+  // 🔧 Fallback if extraction fails
+  if (!originalBody) {
+    console.warn(`⚠️ extractBodyContent empty for ${recipient.email} — using raw fallback`);
+
+    originalBody = prevEmail.sentBodyHtml
+      .replace(/<!DOCTYPE[^>]*>/gi, "")
+      .replace(/<html[^>]*>/gi, "").replace(/<\/html>/gi, "")
+      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
+      .replace(/<body[^>]*>/gi, "").replace(/<\/body>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, "")
+      .trim();
+  }
+
+  console.log(
+    `📨 originalBody for ${recipient.email}: ${
+      originalBody ? originalBody.length + " chars extracted" : "EMPTY"
+    }`
+  );
+
+  const originalSubject = prevEmail.sentSubject || fallbackSubject || "";
+  const originalFrom    = prevEmail.sentFromEmail || fromEmail;
+  const sentAt          = new Date(prevEmail.sentAt || Date.now()).toLocaleString();
+
+  
+  // ✅ Build proper threaded HTML
+  const threadedHtml = buildFollowupHtml({
+    followUpBody: followupWithSignature,
+    originalBody,
+    from:      originalFrom,
+    to:        recipient.email,
+    sentAt,
+    subject:   originalSubject,
+    baseColor: baseStyles.color || "#000",
+  });
+
+  html = `<html>
+    <body style="font-family:Calibri,sans-serif">
+      ${threadedHtml}
+    </body>
+  </html>`;
+
+  // ✅ Proper subject
+  subject = originalSubject ? `Re: ${originalSubject}` : `Re: ${fallbackSubject}`;
+
+  // 🧹 Cleanup memory
+  prevEmail.sentBodyHtml = null;
+
+    // try {
+    //   await sendWithRetry(() =>
+    //     transporter.sendMail({
+    //       from: account.senderName
+    //         ? `"${account.senderName}" <${fromEmail}>`
+    //         : fromEmail,
+    //       to: recipient.email,
+    //       subject,
+    //       html,
+    //     })
+    //   );
+    // } catch (err) {
+    //   console.error("❌ FOLLOW-UP SEND ERROR:", {
+    //     email: recipient.email,
+    //     error: err.message,
+    //     code: err.code,
+    //     response: err.response
+    //   });
+    //   throw err;
+    // }
+    // ✅ FIX 5: Fetch the accountId that actually sent the original email
+    const originalAccountRef = await prisma.campaignRecipient.findFirst({
+      where: {
+        campaignId: originalCampaignId,
+        email: recipient.email,
+        status: "sent",
+      },
+      select: { accountId: true },
+    });
+
+    // ✅ FIX 1 & 5: Use original sender's accountId; fall back to current account
+    const accountToUse = originalAccountRef?.accountId || account.id;
+
+    const actualAccount = await prisma.emailAccount.findUnique({
+      where: { id: accountToUse },
+    });
+
+    // ✅ FIX 8: Guard — skip if account is missing or unusable
+    if (!actualAccount || !actualAccount.smtpHost) {
+      console.error(`❌ Follow-up skipped (account ${accountToUse} not found or incomplete): ${recipient.email}`);
+      await prisma.campaignRecipient.update({
+        where: { id: recipient.id },
+        data: { status: "failed", error: `SMTP account ${accountToUse} not found` },
+      });
+      return;
     }
 
-    console.log(`📨 originalBody for ${recipient.email}: ${originalBody ? originalBody.length + " chars extracted" : "STILL EMPTY — sentBodyHtml may be null in DB"}`);
+    const actualPassword    = decryptPassword(actualAccount);
+    const actualTransporter = createTransporter(actualAccount, actualPassword);
+    const actualFromEmail   = actualAccount.smtpUser || actualAccount.email;
 
-    const originalSubject = prevEmail.sentSubject  || "";
-    const originalFrom    = prevEmail.sentFromEmail || fromEmail;
-    const sentAt          = new Date(prevEmail.sentAt || Date.now()).toLocaleString();
-
-    const threadedHtml = buildFollowupHtml({
-      followUpBody: followupWithSignature,
-      originalBody,
-      from:         originalFrom,
-      to:           recipient.email,
-      sentAt,
-      subject:      originalSubject,
-      baseColor:    baseStyles.color || "#000",
-    });
-
-    html = `<html>
-      <body style="font-family:Calibri,sans-serif">
-      ${threadedHtml}
-      </body>
-      </html>`;
-
-          subject = `Re: ${originalSubject}`;
-
-          // Free the potentially large sentBodyHtml from prevEmail immediately
-          prevEmail.sentBodyHtml = null;
-
-        } else {
-          // No prior email found — send as a standalone message
-          html = `<html>
-      <body style="font-family:Calibri,sans-serif">
-      ${followupWithSignature}
-      </body>
-      </html>`;
-
-    subject = `Re: ${fallbackSubject}`;
-    console.warn(`⚠️ No original email found for ${recipient.email} — sending standalone`);
-  }
-
-await sendWithRetry(() =>
-  transporter.sendMail({
-    from: account.senderName
-      ? `"${account.senderName}" <${fromEmail}>`
-      : fromEmail,
-    to: recipient.email,
-    subject,
-    html,
-  })
-);
-
-try {
-  // ✅ DUPLICATE CHECK (IMPORTANT)
-  const exists = await prisma.emailMessage.findFirst({
-    where: {
-      emailAccountId: account.id,
-      toEmail: recipient.email,
-      subject: subject,
-    },
-  });
-
-  if (exists) {
-    console.log("⚠️ Follow-up duplicate skipped:", recipient.email);
-  } else {
-    // ✅ GENERATE UNIQUE messageId
-    const newMessageId = `sent-${Date.now()}-${recipient.email}`;
-
-    await prisma.emailMessage.create({
-      data: {
-        emailAccountId: account.id,
-        messageId: newMessageId,
-        conversationId: `${account.id}_sent_${recipient.email}`,
-        subject: subject,
-        fromEmail: fromEmail,
-        fromName: account.senderName || null,
+    // ✅ FIX 6: Fetch the stored messageId from the original send for threading headers
+    const prevEmailMsg = await prisma.emailMessage.findFirst({
+      where: {
+        emailAccountId: actualAccount.id,
         toEmail: recipient.email,
-        body: html,
-        direction: "sent",
-        folder: "sent",
-        sentAt: new Date(),
-        isRead: true,
       },
+      orderBy: { sentAt: "asc" },
+      select: { messageId: true },
     });
-  }
-} catch (e) {
-  console.error("⚠️ Email log failed (ignored):", e.message);
-}
-  await prisma.campaignRecipient.update({
-    where: { id: recipient.id },
-    data: {
-      status:        "sent",
-      sentAt:        new Date(),
-      sentBodyHtml:  html,
-      sentSubject:   prevEmail?.sentSubject ?? fallbackSubject,
-      sentFromEmail: fromEmail,
-    },
-  });
 
-  // console.log(`✅ followup ${account.email} → ${recipient.email}`);
-}
+    // ✅ FIX 6: Build threading headers for Gmail/Outlook
+    const threadingHeaders = prevEmailMsg?.messageId
+      ? {
+          "In-Reply-To": prevEmailMsg.messageId,
+          References:    prevEmailMsg.messageId,
+        }
+      : {};
+
+    // ✅ FIX 8 & original intent: SEND using original account's transporter
+    try {
+      await sendWithRetry(() =>
+        actualTransporter.sendMail({
+          from: actualAccount.senderName
+            ? `"${actualAccount.senderName}" <${actualFromEmail}>`
+            : actualFromEmail,
+          to:      recipient.email,
+          subject,
+          html,
+          headers: threadingHeaders,
+        })
+      );
+    } catch (err) {
+      console.error("❌ FOLLOW-UP SEND ERROR:", {
+        email:    recipient.email,
+        account:  actualAccount.email,
+        error:    err.message,
+        code:     err.code,
+        response: err.response,
+      });
+      throw err;
+    }
+
+    try {
+      // ✅ DUPLICATE CHECK
+      const exists = await prisma.emailMessage.findFirst({
+        where: {
+          emailAccountId: actualAccount.id,   // FIX 7: use actualAccount.id
+          toEmail: recipient.email,
+          subject: subject,
+        },
+      });
+
+      if (exists) {
+        console.log("⚠️ Follow-up duplicate skipped:", recipient.email);
+      } else {
+        // ✅ GENERATE UNIQUE messageId
+        const newMessageId = `sent-${Date.now()}-${recipient.email}`;
+
+        await prisma.emailMessage.create({
+          data: {
+            emailAccountId: actualAccount.id,   // FIX 7: was account.id
+            messageId: newMessageId,
+            conversationId: `${actualAccount.id}_sent_${recipient.email}`,
+            subject: subject,
+            fromEmail: actualFromEmail,
+            fromName: actualAccount.senderName || null,
+            toEmail: recipient.email,
+            body: html,
+            direction: "sent",
+            folder: "sent",
+            sentAt: new Date(),
+            isRead: true,
+          },
+        });
+      }
+    } catch (e) {
+      console.error("⚠️ Email log failed (ignored):", e.message);
+    }
+      await prisma.campaignRecipient.update({
+        where: { id: recipient.id },
+        data: {
+          status:        "sent",
+          sentAt:        new Date(),
+          sentBodyHtml:  html,
+          sentSubject:   prevEmail?.sentSubject ?? fallbackSubject,
+          sentFromEmail: actualFromEmail,   // FIX 7: use actualFromEmail (original account)
+        },
+      });
+
+      // console.log(`✅ followup ${account.email} → ${recipient.email}`);
+}  // ← closes sendOneFollowup
 
 /* ─────────────────────────────────────────────────────────────
    PUBLIC ENTRY POINT
 ───────────────────────────────────────────────────────────── */
 
 export async function sendBulkCampaign(campaignId) {
-
   // ── 1. Load campaign metadata only (no recipients, no HTML blobs) ──
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
@@ -972,11 +1010,50 @@ export async function sendBulkCampaign(campaignId) {
 
   // ── 3. Lean recipient list — only IDs + accountId, NO sentBodyHtml ─
   // For 10,000 recipients this is ~10,000 × ~40 bytes ≈ 400 KB. Safe.
-  const pendingRecipients = await prisma.campaignRecipient.findMany({
-    where:   { campaignId, status: "pending" },
-    select:  { id: true, email: true, accountId: true, retryCount: true },
+
+  // ── Resolve root ancestor campaign for follow-ups (must come first) ─
+  let originalCampaignId = null;
+  if (campaign.sendType === "followup" && campaign.parentCampaignId) {
+    originalCampaignId = await resolveOriginalCampaignId(campaign.parentCampaignId);
+  }
+
+let pendingRecipients;
+
+if (campaign.sendType === "followup") {
+  // ✅ ONLY users who received the original email (status = "sent")
+  if (!originalCampaignId) {
+    console.error(`❌ Campaign ${campaignId}: followup has no resolvable originalCampaignId — aborting`);
+    await updateCampaignStatus(campaignId);
+    return;
+  }
+
+  const originalRecipients = await prisma.campaignRecipient.findMany({
+    where: {
+      campaignId: originalCampaignId,
+      status: "sent"
+    },
+    select: { email: true }
+  });
+
+  const validEmails = originalRecipients.map(r => r.email);
+
+  pendingRecipients = await prisma.campaignRecipient.findMany({
+    where: {
+      campaignId,
+      status: "pending",
+      email: { in: validEmails }
+    },
+    select: { id: true, email: true, accountId: true, retryCount: true },
     orderBy: { id: "asc" },
   });
+
+} else {
+  pendingRecipients = await prisma.campaignRecipient.findMany({
+    where: { campaignId, status: "pending" },
+    select: { id: true, email: true, accountId: true, retryCount: true },
+    orderBy: { id: "asc" },
+  });
+}
 
   if (!pendingRecipients.length) {
     console.log(`ℹ️ No pending recipients for campaign ${campaignId}`);
@@ -984,12 +1061,7 @@ export async function sendBulkCampaign(campaignId) {
     return;
   }
 
-  // ── 4. Build assignment plan ───────────────────────────────────────
-  // subjectPlan and pitchPlan are small arrays of strings (the same few
-  // pitch bodies referenced multiple times — JS shares the string pointers).
-  // recipientAssignmentMap maps each recipientId → { subject, pitchBody }
-  // so we can look up assignments inside the batch loop without reloading
-  // all recipients.
+
   const count      = pendingRecipients.length;
   const subjectPlan = distribute(subjects, count);
   const pitchPlan   = pitchBodies.length
@@ -1016,16 +1088,6 @@ export async function sendBulkCampaign(campaignId) {
     return;
   }
 
-  // ── 6. For follow-ups: resolve root ancestor campaign once ─────────
-  let originalCampaignId = null;
-  if (campaign.sendType === "followup" && campaign.parentCampaignId) {
-    originalCampaignId = await resolveOriginalCampaignId(campaign.parentCampaignId);
-  }
-
-  // ── 7. Kick off per-account batch processing in parallel ───────────
-  // Each account runs independently and only holds BATCH_SIZE recipients
-  // in memory at a time. Promise.all is safe here because memory is
-  // bounded per account (not per total recipient count).
   await Promise.all(
     accountIds.map(accountId =>
       processAccountBatched({
@@ -1038,12 +1100,10 @@ export async function sendBulkCampaign(campaignId) {
       })
     )
   );
-
   // ── 8. Final status update ─────────────────────────────────────────
   await updateCampaignStatus(campaignId);
   console.log(`✅ Campaign ${campaignId} batch processing complete`);
 }
-
 /* ─────────────────────────────────────────────────────────────
    UNCHANGED: updateCampaignStatus
 ───────────────────────────────────────────────────────────── */
@@ -1092,34 +1152,3 @@ async function updateCampaignStatus(campaignId) {
 
   console.log(`Campaign ${campaignId} status → ${finalStatus}`);
 }
-
-// 🔁 AUTO RETRY FAILED EMAILS (runs every 5 mins)
-// setInterval(async () => {
-//   try {
-//     const failed = await prisma.campaignRecipient.findMany({
-//       where: {
-//         status: "failed",
-//         retryCount: { lt: 3 } // max 3 retries
-//       },
-//       take: 100,
-//     });
-
-//     for (const r of failed) {
-//       await prisma.campaignRecipient.update({
-//         where: { id: r.id },
-//         data: {
-//           status: "pending",
-//           retryCount: { increment: 1 }
-//         }
-//       });
-//     }
-
-//     if (failed.length) {
-//       console.log(`🔁 Re-queued ${failed.length} failed emails`);
-//     }
-
-//   } catch (err) {
-//     console.error("Retry job error:", err.message);
-//   }
-
-// }, 5 * 60 * 1000);
