@@ -77,6 +77,7 @@ function DailyLimitBadge({ unlockAt }) {
 
 export default function CampaignDetail() {
   const [campaigns, setCampaigns] = useState([]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(true); // ✅ PERF FIX: track loading state for dropdown
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [loadedCampaign, setLoadedCampaign] = useState(null);
   const [subjects, setSubjects] = useState([]);
@@ -101,6 +102,7 @@ export default function CampaignDetail() {
   // Fetch campaigns
   // ------------------------------
   const fetchCampaigns = (level = 1) => {
+    setLoadingCampaigns(true); // ✅ show loading state immediately
     fetch(`${API_BASE_URL}/api/campaigns`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -152,7 +154,8 @@ export default function CampaignDetail() {
 
         setCampaigns(filtered);
       })
-      .catch(console.error);
+      .catch(console.error)
+      .finally(() => setLoadingCampaigns(false)); // ✅ always clear loading
   };
   useEffect(() => {
     fetchCampaigns(followupLevel);
@@ -506,10 +509,14 @@ export default function CampaignDetail() {
                 <select
                   value={selectedCampaignId}
                   onChange={(e) => handleSelectCampaign(e.target.value)}
-                  className="w-full px-5 py-3.5 border-2 border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all bg-white/80 text-slate-800 font-medium"
+                  disabled={loadingCampaigns}
+                  className="w-full px-5 py-3.5 border-2 border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all bg-white/80 text-slate-800 font-medium disabled:opacity-60 disabled:cursor-wait"
                 >
-                  <option value="">-- Choose a campaign --</option>
-                  {campaigns.map((c) => {
+                  {/* ✅ PERF FIX: Show "Loading…" immediately while API fetches */}
+                  <option value="">
+                    {loadingCampaigns ? "⏳ Loading campaigns…" : campaigns.length === 0 ? "-- No eligible campaigns --" : "-- Choose a campaign --"}
+                  </option>
+                  {!loadingCampaigns && campaigns.map((c) => {
                     const completedCount = c.recipients?.filter(r => r.status === "sent" || r.status === "completed").length || 0;
                     const ordinal = c.followupNumber === 2 ? "2nd" : c.followupNumber === 3 ? "3rd" : c.followupNumber === 4 ? "4th" : "1st";
                     return (

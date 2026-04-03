@@ -142,6 +142,8 @@ export default function CreateCampaign() {
   const [showPitchDropdown, setShowPitchDropdown] = useState(false);
   const [lockedAccounts, setLockedAccounts] = useState([]);          // busy (campaign sending)
   const [dailyLimitLocked, setDailyLimitLocked] = useState([]);     // [{ accountId, unlockAt }]
+  const [lockedLoading, setLockedLoading] = useState(true);         // true until first fetch completes
+  const fetchLockedRef = useRef(null);                               // stable ref so dropdown can trigger it
   const [customLimits, setCustomLimits] = useState({});
 
   const [campaignType, setCampaignType] = useState("immediate");
@@ -241,36 +243,48 @@ export default function CreateCampaign() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchLocked = async () => {
-        try {
-          const token = localStorage.getItem("token");
-          const res = await fetch(`${API_BASE_URL}/api/campaigns/accounts/locked`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (!res.ok) {
-            console.error("Failed to fetch locked accounts:", res.status);
-            return;
-          }
-          const data = await res.json();
-          if (data.success) {
-            // New shape: { busy: [...], dailyLimitLocked: [{ accountId, unlockAt }] }
-            // Backward-compat: old shape was just an array
-            if (Array.isArray(data.data)) {
-              setLockedAccounts(data.data);
-              setDailyLimitLocked([]);
-            } else {
-              setLockedAccounts(data.data?.busy || []);
-              setDailyLimitLocked(data.data?.dailyLimitLocked || []);
-            }
-          }
-        } catch (err) {
-          console.error("Failed to fetch locked accounts", err);
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`${API_BASE_URL}/api/campaigns/accounts/locked`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          console.error("Failed to fetch locked accounts:", res.status);
+          return;
         }
+        const data = await res.json();
+        if (!isMounted) return;
+        if (data.success) {
+          if (Array.isArray(data.data)) {
+            setLockedAccounts(data.data);
+            setDailyLimitLocked([]);
+          } else {
+            setLockedAccounts(data.data?.busy || []);
+            setDailyLimitLocked(data.data?.dailyLimitLocked || []);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch locked accounts", err);
+      } finally {
+        if (isMounted) setLockedLoading(false);
+      }
     };
 
+    // Store in ref so the dropdown open button can call it immediately too
+    fetchLockedRef.current = fetchLocked;
+
+    // Run immediately on mount — no initial delay
     fetchLocked();
-    const timer = setInterval(fetchLocked, 4000);
-    return () => clearInterval(timer);
+
+    // Then poll every 5 seconds
+    const timer = setInterval(fetchLocked, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -680,12 +694,22 @@ export default function CreateCampaign() {
               <div className="flex items-center gap-4 mb-3 text-xs">
                 <span className="flex items-center gap-1.5 text-emerald-600 font-bold bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
                   <CheckCircle2 size={14} />
-                  {availableAccounts.length} Available
+                  {lockedLoading ? (
+                    <span className="inline-block w-6 h-3 bg-emerald-200 rounded animate-pulse" />
+                  ) : (
+                    <>{availableAccounts.length} Available</>
+                  )}
                 </span>
-                {lockedAccountsCount > 0 && (
+                {!lockedLoading && lockedAccountsCount > 0 && (
                   <span className="flex items-center gap-1.5 text-red-600 font-bold bg-red-50 px-3 py-1.5 rounded-lg border border-red-200">
                     <Lock size={14} />
-                    {lockedAccountsCount} In Use
+                    {lockedAccountsCount} In Use / Locked
+                  </span>
+                )}
+                {lockedLoading && (
+                  <span className="flex items-center gap-1.5 text-slate-500 font-bold bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                    <div className="w-3 h-3 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
+                    Checking...
                   </span>
                 )}
               </div>
@@ -693,8 +717,14 @@ export default function CreateCampaign() {
               <button
                 type="button"
                  onClick={() => {
-                  setShowFromDropdown(!showFromDropdown); // open/close this dropdown
-                  setShowPitchDropdown(false);            // close pitch dropdown
+                  const opening = !showFromDropdown;
+                  setShowFromDropdown(opening);
+                  setShowPitchDropdown(false);
+                  // Re-fetch locked status the instant user opens the dropdown
+                  if (opening) {
+                    setLockedLoading(true);
+                    fetchLockedRef.current?.();
+                  }
                  }}
                 
                 className="w-full border border-emerald-200 rounded-xl p-3.5 text-left flex justify-between items-center bg-white hover:border-emerald-300 transition-all font-medium"
@@ -830,8 +860,25 @@ export default function CreateCampaign() {
                     );
                   })()}
 
-                  {/* Locked / In Use accounts */}
-                  {(lockedAccountsList.length > 0 || dailyLimitLockedList.length > 0) && (
+                  {/* Locked / In Use accounts — with loading skeleton */}
+                  {lockedLoading ? (
+                    <div className="border-t border-emerald-200 p-3">
+                      <div className="flex items-center gap-2 mb-2 px-2">
+                        <div className="w-3 h-3 rounded-full bg-slate-200 animate-pulse" />
+                        <div className="h-3 w-40 bg-slate-200 rounded animate-pulse" />
+                      </div>
+                      {[1, 2].map(i => (
+                        <div key={i} className="flex items-center gap-3 p-3 rounded-lg mb-2 bg-slate-50">
+                          <div className="w-4 h-4 rounded-full bg-slate-200 animate-pulse flex-shrink-0" />
+                          <div className="flex-1 space-y-1.5">
+                            <div className="h-3 w-48 bg-slate-200 rounded animate-pulse" />
+                            <div className="h-2.5 w-32 bg-slate-100 rounded animate-pulse" />
+                          </div>
+                          <div className="h-6 w-28 bg-slate-200 rounded-lg animate-pulse" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (lockedAccountsList.length > 0 || dailyLimitLockedList.length > 0) ? (
                     <div className="border-t border-emerald-200 p-3">
                       {/* Campaign-busy accounts */}
                       {lockedAccountsList.length > 0 && (
@@ -868,7 +915,7 @@ export default function CreateCampaign() {
                         </>
                       )}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               )}
             </div>

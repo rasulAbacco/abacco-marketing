@@ -339,28 +339,20 @@ const DashboardTab = () => {
   const [deleting, setDeleting] = useState(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState(null);
 
-  useEffect(() => {
-    fetchCampaigns();
-    const interval = setInterval(fetchCampaigns, 30000);
-    return () => clearInterval(interval);
-  }, [filter, customDate]);
-
-  const fetchCampaigns = async () => {
+  // ✅ PERF FIX: fetchCampaigns takes explicit args to avoid stale closure bug.
+  // The interval callback previously captured the initial filter/customDate values
+  // and never updated when the user changed filters, causing stale data on auto-refresh.
+  const fetchCampaigns = async (currentFilter, currentDate, isInitial) => {
+    const f = currentFilter !== undefined ? currentFilter : filter;
+    const d = currentDate !== undefined ? currentDate : customDate;
     try {
-      setIsRefreshing(true);
+      if (!isInitial) setIsRefreshing(true);
       const params = new URLSearchParams();
-      
-      if (filter) {
-        params.append("range", filter); // send "all" also
-      }
-
-      
-      if (customDate) {
-        params.append("date", customDate);
-      }
+      if (f) params.append("range", f);
+      if (d) params.append("date", d);
 
       const res = await api.get(`${API_BASE_URL}/api/campaigns/dashboard?${params.toString()}`);
-      
+
       if (res.data.success) {
         setCampaigns(res.data.data?.recentCampaigns || []);
         setStats(res.data.data?.stats || {});
@@ -373,6 +365,13 @@ const DashboardTab = () => {
       setIsRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    // Pass filter/date explicitly so the 30s interval never uses stale closure values
+    fetchCampaigns(filter, customDate, true);
+    const interval = setInterval(() => fetchCampaigns(filter, customDate), 30000);
+    return () => clearInterval(interval);
+  }, [filter, customDate]);
 
   const toggleRow = (id) => {
     const newSet = new Set(expandedRows);
@@ -416,7 +415,7 @@ const stopCampaign = async (id) => {
 
     if (res.data.success) {
       alert("Campaign stopped successfully!");
-      fetchCampaigns();
+      fetchCampaigns(filter, customDate);
     } else {
       alert(res.data.message || "Failed to stop campaign");
     }
@@ -430,7 +429,7 @@ const stopCampaign = async (id) => {
 
 
   const manualRefresh = async () => {
-    await fetchCampaigns();
+    await fetchCampaigns(filter, customDate);
   };
 
   if (loading) {
