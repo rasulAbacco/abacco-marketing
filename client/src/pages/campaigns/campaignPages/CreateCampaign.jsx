@@ -78,7 +78,7 @@ const COLOR_FAMILIES = [
   }
 ];
 
-const LIMIT_OPTIONS = [20, 30, 40, 50, 70, 80, 100, 150, 200];
+const LIMIT_OPTIONS = [10,20, 30, 40, 50,60, 70, 80, 100, 150, 200];
 
 
 export default function CreateCampaign() {
