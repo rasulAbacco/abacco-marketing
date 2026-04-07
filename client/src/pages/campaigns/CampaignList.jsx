@@ -146,6 +146,7 @@ const CampaignProgress = ({ campaignId }) => {
               <th className="px-4 py-3.5 text-left text-xs font-bold text-emerald-600 uppercase tracking-wide">Domain</th>
               <th className="px-4 py-3.5 text-left text-xs font-bold text-emerald-600 uppercase tracking-wide">Processing</th>
               <th className="px-4 py-3.5 text-left text-xs font-bold text-emerald-600 uppercase tracking-wide">Completed</th>
+              <th className="px-4 py-3.5 text-left text-xs font-bold text-emerald-600 uppercase tracking-wide">Sending IP</th>
               <th className="px-4 py-3.5 text-left text-xs font-bold text-emerald-600 uppercase tracking-wide">ETA</th>
             </tr>
           </thead>
@@ -164,12 +165,14 @@ const CampaignProgress = ({ campaignId }) => {
                     {r.completed}
                   </span>
                 </td>
+                <td>{r.sendingIp || "—"}</td>
                 <td className="px-4 py-3.5">
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-100 text-purple-700 text-xs font-semibold border border-purple-200">
                     <Clock size={12} />
                     {r.eta}
                   </span>
                 </td>
+                
               </tr>
             ))}
           </tbody>
@@ -640,6 +643,7 @@ const stopCampaign = async (id) => {
                     <th className="px-6 py-4 text-left">
                       <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Date</span>
                     </th>
+                
                     <th className="px-6 py-4 text-center">
                       <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Actions</span>
                     </th>
@@ -878,6 +882,7 @@ const stopCampaign = async (id) => {
                     </>
                   );
                 })}
+                
               </tbody>
             </table>
             </div>

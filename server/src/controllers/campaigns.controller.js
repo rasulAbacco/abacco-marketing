@@ -844,7 +844,6 @@ export const getCampaignProgress = async (req, res) => {
       } catch {}
     }
 
-    // ✅ SAFE LIMITS
     const SAFE_LIMITS = {
       gmail: 50,
       gsuite: 80,
@@ -861,7 +860,7 @@ export const getCampaignProgress = async (req, res) => {
       return `${m}m`;
     }
 
-    // ✅ Step 1: Get all unique accountIds (ONE TIME)
+    // ✅ Step 1: Get accountIds
     const accountIds = [
       ...new Set(
         campaign.recipients
@@ -870,18 +869,18 @@ export const getCampaignProgress = async (req, res) => {
       ),
     ];
 
-    // ✅ Step 2: Fetch all accounts in ONE query (FAST)
+    // ✅ Step 2: Fetch accounts
     const accounts = await prisma.emailAccount.findMany({
       where: { id: { in: accountIds } },
     });
 
-    // ✅ Step 3: Create Map for quick lookup
+    // ✅ Step 3: Map
     const accountMap = {};
     accounts.forEach((acc) => {
       accountMap[acc.id] = acc;
     });
 
-    // ✅ Step 4: Group progress by account
+    // ✅ Step 4: Group data (WITH IP)
     const grouped = {};
 
     for (const r of campaign.recipients) {
@@ -898,12 +897,18 @@ export const getCampaignProgress = async (req, res) => {
           domain: account.provider,
           processing: 0,
           completed: 0,
+          sendingIp: null,   // ✅ ADD
           eta: "0m",
         };
       }
 
       if (r.status === "pending") grouped[key].processing++;
       if (r.status === "sent") grouped[key].completed++;
+
+      // ✅ IMPORTANT: Capture IP (only when available)
+      if (r.sendingIp && !grouped[key].sendingIp) {
+        grouped[key].sendingIp = r.sendingIp;
+      }
     }
 
     // ✅ Step 5: Calculate ETA
@@ -918,17 +923,12 @@ export const getCampaignProgress = async (req, res) => {
         limit = customLimits[acc.id];
       }
 
-      // ✅ FIX: Use only REMAINING (processing) emails for ETA, not total.
-      // Previously used (processing + completed) which gave a fixed number
-      // that never decreased as emails were sent.
       const remainingHoursNeeded = row.processing / limit;
       const remainingMsNeeded = remainingHoursNeeded * 60 * 60 * 1000;
 
       row.eta = row.processing === 0 ? "Done" : formatDuration(remainingMsNeeded);
-
     }
 
-    // ✅ Return Fast Response
     return res.json({
       success: true,
       data: Object.values(grouped),
@@ -1129,6 +1129,7 @@ export const getSingleCampaign = async (req, res) => {
             sentSubject: true,
             sentFromEmail: true,
             sentBodyHtml: true,  // ✅ Required for follow-up threading
+            sendingIp: true,
           }
         }
       }

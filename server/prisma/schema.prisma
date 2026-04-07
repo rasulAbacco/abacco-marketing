@@ -318,35 +318,22 @@ model Campaign {
 }
 
 model CampaignRecipient {
-  id Int @id @default(autoincrement())
-
-  campaignId Int
-
-  // 🔹 Recipient info
-  email String
-
-  // 🔹 Sending status
-  status String @default("pending")
-  // pending | sending | sent | failed
-
-  error String?
-
-  // 🔹 Send metadata
+  id            Int       @id @default(autoincrement())
+  campaignId    Int
+  email         String
+  status        String    @default("pending")
+  error         String?
   sentAt        DateTime?
   accountId     Int?
   sentSubject   String?
   sentBodyHtml  String?
   sentFromEmail String?
-
-  // 🔹 Retry & batch support
-  retryCount  Int       @default(0)
-  lastTriedAt DateTime?
-
-  // 🔹 Relation (FIXED — ONE LINE)
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  retryCount    Int       @default(0)
+  sendingIp     String?
+  lastTriedAt   DateTime?
+  campaign      Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, email])
-  // 🔹 Indexes (VERY IMPORTANT for performance)
   @@index([campaignId])
   @@index([campaignId, status])
   @@index([status, sentAt])

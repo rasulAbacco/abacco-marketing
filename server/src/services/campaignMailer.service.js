@@ -5,6 +5,16 @@ import prisma from "../prismaClient.js";
 import { decrypt } from "../utils/crypto.js";
 import cache from "../utils/cache.js";
 
+import dns from "dns/promises";
+
+async function getSmtpIp(host) {
+  try {
+    const result = await dns.lookup(host);
+    return result.address;
+  } catch {
+    return "unknown";
+  }
+}
 
 function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
@@ -432,7 +442,10 @@ async function processAccountBatched({
   const fromEmail     = account.smtpUser || account.email;
   const password      = decryptPassword(account);
   const transporter   = createTransporter(account, password);
-
+  const smtpIp        = await getSmtpIp(account.smtpHost);
+  console.log("📡 SMTP HOST:", account.smtpHost);
+  console.log("🌐 RESOLVED IP:", smtpIp);
+  console.log("📧 SENDING FROM:", account.email);
   let accountSendCount = 0;
   let accountStartTime = Date.now();
 
@@ -536,6 +549,7 @@ async function processAccountBatched({
           fromEmail,
           campaign,
           assignment,
+          smtpIp
         });
       }
 
@@ -588,6 +602,7 @@ async function sendOneNormal({
   fromEmail,
   campaign,
   assignment,
+  smtpIp   
 }) {
   const { subject: rawSubject, pitchBody: rawBody } = assignment;
 
@@ -682,6 +697,7 @@ async function sendOneNormal({
       sentBodyHtml:  html,
       sentSubject:   rawSubject,    // stored WITHOUT the domain label prefix
       sentFromEmail: fromEmail,
+      sendingIp: smtpIp 
     },
   });
 
@@ -729,18 +745,18 @@ async function sendOneFollowup({
   let html;
 
   // 🚨 STRICT FOLLOW-UP: ONLY send if original email exists
-  if (!prevEmail || !prevEmail.sentBodyHtml) {
-    console.warn(`❌ Skipping follow-up (no original email): ${recipient.email}`);
+  if (!prevEmail) {
+    console.warn(`❌ No original email record: ${recipient.email}`);
 
     await prisma.campaignRecipient.update({
       where: { id: recipient.id },
       data: {
         status: "failed",
-        error: "No original email found for follow-up"
+        error: "No original email found"
       }
     });
 
-    return; // 🚨 STOP sending completely
+    return;
   }
 
   // ✅ Build threaded reply ONLY for valid recipients
@@ -923,6 +939,7 @@ async function sendOneFollowup({
     } catch (e) {
       console.error("⚠️ Email log failed (ignored):", e.message);
     }
+    const smtpIp = await getSmtpIp(actualAccount.smtpHost); 
       await prisma.campaignRecipient.update({
         where: { id: recipient.id },
         data: {
@@ -931,6 +948,7 @@ async function sendOneFollowup({
           sentBodyHtml:  html,
           sentSubject:   prevEmail?.sentSubject ?? fallbackSubject,
           sentFromEmail: actualFromEmail,   // FIX 7: use actualFromEmail (original account)
+          sendingIp: smtpIp 
         },
       });
 
