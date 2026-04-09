@@ -583,18 +583,18 @@ async function processAccountBatched({
     //    If we are outside 5 PM–5 AM, park here until the window opens.
     //    We re-check the campaign status after waking up in case it was
     //    stopped while we were sleeping.
-    if (!isWithinSendingWindow()) {
-      await waitForSendingWindow();
-      // Re-check campaign alive after the sleep
-      const afterSleep = await prisma.campaign.findUnique({
-        where:  { id: campaignId },
-        select: { status: true },
-      });
-      if (!afterSleep || afterSleep.status !== "sending") {
-        console.log(`⏹ Campaign ${campaignId} stopped during window-wait — halting.`);
-        return;
-      }
-    }
+    // if (!isWithinSendingWindow()) {
+    //   await waitForSendingWindow();
+    //   // Re-check campaign alive after the sleep
+    //   const afterSleep = await prisma.campaign.findUnique({
+    //     where:  { id: campaignId },
+    //     select: { status: true },
+    //   });
+    //   if (!afterSleep || afterSleep.status !== "sending") {
+    //     console.log(`⏹ Campaign ${campaignId} stopped during window-wait — halting.`);
+    //     return;
+    //   }
+    // }
 
     // ── [C] Global daily-limit check (outer, before fetching a batch) ───
     const dailyCount = await getDailyCount(userId);
@@ -640,19 +640,19 @@ async function processAccountBatched({
       }
 
       // ── [F] Sending-window check (inner — catches window expiry mid-batch)
-      if (!isWithinSendingWindow()) {
-        console.log(`🌙 Sending window closed mid-batch. Pausing after ${recipient.email}.`);
-        await waitForSendingWindow();
-        // Re-check campaign after wake
-        const afterSleep = await prisma.campaign.findUnique({
-          where:  { id: campaignId },
-          select: { status: true },
-        });
-        if (!afterSleep || afterSleep.status !== "sending") {
-          console.log(`⏹ Campaign ${campaignId} stopped during window-wait (inner). Halting.`);
-          return;
-        }
-      }
+      // if (!isWithinSendingWindow()) {
+      //   console.log(`🌙 Sending window closed mid-batch. Pausing after ${recipient.email}.`);
+      //   await waitForSendingWindow();
+      //   // Re-check campaign after wake
+      //   const afterSleep = await prisma.campaign.findUnique({
+      //     where:  { id: campaignId },
+      //     select: { status: true },
+      //   });
+      //   if (!afterSleep || afterSleep.status !== "sending") {
+      //     console.log(`⏹ Campaign ${campaignId} stopped during window-wait (inner). Halting.`);
+      //     return;
+      //   }
+      // }
 
       // ── [G] Daily limit check (inner — per-email, belt-and-suspenders) ─
       const currentCount = await getDailyCount(userId);
@@ -1139,20 +1139,20 @@ export async function sendBulkCampaign(campaignId) {
   // ── 2. Global gate — sending window ──────────────────────────────────
   //    If triggered outside the window (e.g. a scheduled job fires early),
   //    wait here before doing any work.
-  if (!isWithinSendingWindow()) {
-    console.log(`🌙 Campaign ${campaignId} triggered outside sending window. Waiting for 5 PM…`);
-    await waitForSendingWindow();
+  // if (!isWithinSendingWindow()) {
+  //   console.log(`🌙 Campaign ${campaignId} triggered outside sending window. Waiting for 5 PM…`);
+  //   await waitForSendingWindow();
 
-    // Re-check status after sleep
-    const refreshed = await prisma.campaign.findUnique({
-      where:  { id: campaignId },
-      select: { status: true },
-    });
-    if (!refreshed || refreshed.status !== "sending") {
-      console.log(`⏹ Campaign ${campaignId} stopped during window-wait at entry. Aborting.`);
-      return;
-    }
-  }
+  //   // Re-check status after sleep
+  //   const refreshed = await prisma.campaign.findUnique({
+  //     where:  { id: campaignId },
+  //     select: { status: true },
+  //   });
+  //   if (!refreshed || refreshed.status !== "sending") {
+  //     console.log(`⏹ Campaign ${campaignId} stopped during window-wait at entry. Aborting.`);
+  //     return;
+  //   }
+  // }
 
   // ── 3. Global gate — daily limit ─────────────────────────────────────
   const sentToday = await getDailyCount(userId);
