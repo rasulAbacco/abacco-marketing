@@ -11,7 +11,7 @@ const generateToken = (id) => {
 
 export const registerUser = async (req, res) => {
   try {
-    const { email, password, empId, name, jobRole } = req.body;
+    const { email, password, empId, name, jobRole, location } = req.body;
 
     if (!email || !password || !name || !jobRole) {
       return res.status(400).json({
@@ -31,6 +31,7 @@ export const registerUser = async (req, res) => {
         empId,
         name,
         jobRole,
+        location,
         isActive: true
       },
     });
@@ -153,6 +154,7 @@ export const getCurrentUser = async (req, res) => {
         email: true,
         name: true,
         jobRole: true,
+        location: true,
         empId: true,
         isActive: true,
       },
@@ -188,6 +190,7 @@ export const getAllUsers = async (req, res) => {
         name: true,
         email: true,
         jobRole: true,
+        location: true,
         password: true,
         isActive: true,
         createdAt: true,
@@ -221,7 +224,7 @@ export const updateUser = async (req, res) => {
       return res.status(400).json({ error: "User ID is missing" });
     }
 
-    const { name, email, password, empId, jobRole } = req.body;
+    const { name, email, password, empId, jobRole, location } = req.body;
 
     // ✅ Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -257,6 +260,7 @@ export const updateUser = async (req, res) => {
         email: email || existingUser.email,
         empId: empId || existingUser.empId,
         jobRole: jobRole || existingUser.jobRole,
+        location: location || existingUser.location,
         password: updatedPassword,
       },
       select: {
@@ -264,6 +268,7 @@ export const updateUser = async (req, res) => {
         email: true,
         name: true,
         jobRole: true,
+        location: true,
         empId: true,
         isActive: true,
       }

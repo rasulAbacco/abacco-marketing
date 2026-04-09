@@ -92,6 +92,7 @@ model User {
   empId    String? @unique
   name     String?
   jobRole  String  @default("EMP")
+  location String?
   isActive Boolean @default(true) // ✅ Active/Inactive status
 
   emailAccounts      EmailAccount[]

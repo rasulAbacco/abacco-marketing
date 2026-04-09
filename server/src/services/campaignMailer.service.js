@@ -487,7 +487,7 @@ function buildNormalEmailHtml(body, signature, baseStyles) {
    SECTION 3 — RETRY / ERROR HELPERS  (unchanged)
 ═══════════════════════════════════════════════════════════════════════════ */
 
-async function sendWithRetry(sendFn, retries = 3) {
+async function sendWithRetry(sendFn, retries = 1) {
   let lastError;
   for (let i = 1; i <= retries; i++) {
     try {
@@ -609,7 +609,6 @@ async function processAccountBatched({
         campaignId,
         accountId: Number(accountId),
         OR: [
-          { status: "retry" },    // retries first
           { status: "pending" },
         ],
       },
@@ -722,36 +721,21 @@ async function processAccountBatched({
         const newDailyTotal = await getDailyCount(userId);
         console.log(`📊 Daily sent: ${newDailyTotal}/${DAILY_LIMIT} (user ${userId})`);
 
-        if (!recipient._isRetry) {
-          await sleep(delayPerEmail);
-        }
+        // if (!recipient._isRetry) {
+        //   await sleep(delayPerEmail);
+        // }
 
-      } catch (err) {
-        console.error(`❌ Send failed → ${recipient.email}:`, err.message);
+     } catch (err) {
+      console.error(`❌ Send failed → ${recipient.email}:`, err.message);
 
-        if (
-          isTemporaryError(err) &&
-          (recipient.retryCount || 0) < 3 &&
-          !err.message.toLowerCase().includes("sent")
-        ) {
-          console.warn(`🔁 Retry scheduled: ${recipient.email}`);
-          recipient._isRetry = true;
-
-          await prisma.campaignRecipient.update({
-            where: { id: recipient.id },
-            data: {
-              status:     "retry",
-              retryCount: { increment: 1 },
-              error:      err.message,
-            },
-          });
-        } else {
-          await prisma.campaignRecipient.update({
-            where: { id: recipient.id },
-            data: { status: "failed", error: err.message },
-          });
-        }
-      }
+      await prisma.campaignRecipient.update({
+        where: { id: recipient.id },
+        data: {
+          status: "failed",
+          error: err.message,
+        },
+      });
+    }
     } // end for (recipient of batch)
   } // end while (true)
 }

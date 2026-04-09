@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import AddEmp from "./AddEmp";
 import { api } from "../utils/api";
-import { Users, UserCheck, UserX, Briefcase, Pencil, Trash2, Search, X, Eye, EyeOff } from "lucide-react";
+import { Users, UserCheck, UserX, Briefcase, Pencil, Trash2, Search, X, Eye, EyeOff, MapPin } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -12,6 +12,7 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showPasswords, setShowPasswords] = useState({});
+  const [locationFilter, setLocationFilter] = useState("All");
 
   const activeCount = users.filter((u) => u.isActive).length;
   const inactiveCount = users.filter((u) => !u.isActive).length;
@@ -40,11 +41,8 @@ export default function UsersPage() {
         alert(`✅ ${userName} has been deleted successfully.`);
       } catch (error) {
         console.error("Error deleting employee:", error);
-        
-        // ✅ Show user-friendly error message
         const errorMessage = error.response?.data?.error || "Failed to delete employee";
         const suggestion = error.response?.data?.suggestion;
-        
         if (suggestion) {
           alert(`❌ ${errorMessage}\n\n💡 ${suggestion}`);
         } else {
@@ -57,8 +55,6 @@ export default function UsersPage() {
   const handleToggleStatus = async (id) => {
     try {
       const res = await api.put(`${API_BASE_URL}/api/users/${id}/status`);
-
-      // ✅ Update UI instantly
       setUsers((prev) =>
         prev.map((u) =>
           u.id === id ? { ...u, isActive: res.data.isActive } : u
@@ -76,21 +72,29 @@ export default function UsersPage() {
     setEditingUser(null);
   };
 
-  // ✅ Filter users based on search query
+  // Filter users based on search query AND location filter
   const filteredUsers = users.filter((user) => {
     const query = searchQuery.toLowerCase();
-    return (
+    const matchesSearch =
       user.name?.toLowerCase().includes(query) ||
       user.email?.toLowerCase().includes(query) ||
       user.empId?.toLowerCase().includes(query) ||
-      user.jobRole?.toLowerCase().includes(query)
-    );
-  });
+      user.jobRole?.toLowerCase().includes(query);
 
+    const matchesLocation =
+      locationFilter === "All" ||
+      (locationFilter === "Bengaluru" && user.location === "Bengaluru") ||
+      (locationFilter === "Anantapur" && user.location === "Anantapur") ||
+      (locationFilter === "Others" &&
+        user.location !== "Bengaluru" &&
+        user.location !== "Anantapur");
+
+    return matchesSearch && matchesLocation;
+  });
 
   return (
     <div className="p-6 bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 min-h-screen">
-      
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8">
         <div>
@@ -119,7 +123,7 @@ export default function UsersPage() {
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        
+
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-emerald-100 p-5 flex gap-4 items-center hover:shadow-xl transition-shadow duration-200">
           <div className="p-3 bg-gradient-to-br from-emerald-100 to-green-100 rounded-xl">
             <Users className="text-emerald-600" size={24} />
@@ -129,7 +133,7 @@ export default function UsersPage() {
             <h2 className="text-3xl font-bold text-slate-800">{users.length}</h2>
           </div>
         </div>
- 
+
         {/* Active */}
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-green-100 p-5 flex gap-4 items-center hover:shadow-xl transition-shadow duration-200">
           <div className="p-3 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl">
@@ -164,35 +168,70 @@ export default function UsersPage() {
 
       {/* Employee Table */}
       <div className="bg-white/80 backdrop-blur-sm shadow-xl rounded-2xl overflow-hidden border border-emerald-100">
-        
+
         <div className="p-6 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-green-50">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-            <h2 className="text-xl font-bold text-slate-800">
-              Employee List
-            </h2>
+            <h2 className="text-xl font-bold text-slate-800">Employee List</h2>
 
-            {/* Search Bar */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-emerald-500" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search by name, email, ID, or role..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-10 py-2.5 w-full md:w-80 bg-white border-2 border-emerald-200 rounded-xl text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all duration-200"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-emerald-600 transition-colors"
+            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+
+              {/* Location Filter Dropdown */}
+              <div className="relative flex items-center">
+                <div className="absolute left-3 pointer-events-none">
+                  <MapPin className="h-4 w-4 text-emerald-500" />
+                </div>
+                <select
+                  value={locationFilter}
+                  onChange={(e) => setLocationFilter(e.target.value)}
+                  className="pl-9 pr-4 py-2.5 bg-white border-2 border-emerald-200 rounded-xl text-slate-800 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all duration-200 appearance-none cursor-pointer font-medium text-sm"
                 >
-                  <X size={18} />
-                </button>
-              )}
+                  <option value="All">All Locations</option>
+                  <option value="Bengaluru">Bengaluru</option>
+                  <option value="Anantapur">Anantapur</option>
+                  <option value="Others">Others</option>
+                </select>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-emerald-500" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search by name, email, ID, or role..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-10 py-2.5 w-full md:w-80 bg-white border-2 border-emerald-200 rounded-xl text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all duration-200"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-emerald-600 transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Active filter badge */}
+          {locationFilter !== "All" && (
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-sm text-slate-500">Showing:</span>
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-semibold">
+                <MapPin size={12} />
+                {locationFilter}
+                <button
+                  onClick={() => setLocationFilter("All")}
+                  className="ml-1 hover:text-emerald-900"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -204,6 +243,7 @@ export default function UsersPage() {
                 <th className="p-4 font-semibold">Email</th>
                 <th className="p-4 font-semibold">Password</th>
                 <th className="p-4 font-semibold">Role</th>
+                <th className="p-4 font-semibold">Location</th>
                 <th className="p-4 font-semibold">Actions</th>
                 <th className="p-4 font-semibold">Status</th>
               </tr>
@@ -214,44 +254,46 @@ export default function UsersPage() {
                 <tr
                   key={u.id}
                   className={`border-b border-emerald-50 hover:bg-emerald-50/50 transition-colors duration-150 ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-emerald-50/20'
+                    index % 2 === 0 ? "bg-white" : "bg-emerald-50/20"
                   }`}
                 >
                   <td className="p-4 font-semibold text-emerald-700">{u.empId}</td>
                   <td className="p-4 text-slate-800 font-medium">{u.name}</td>
                   <td className="p-4 text-slate-600">{u.email}</td>
                   <td className="p-4">
-                  <div className="flex items-center gap-2">
-                    {/* Hidden Password */}
-                    <span className="font-mono text-sm text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                      {showPasswords[u.id] ? u.password : "••••••••"}
-                    </span>
-
-                    {/* Toggle Button */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowPasswords((prev) => ({
-                          ...prev,
-                          [u.id]: !prev[u.id],
-                        }))
-                      }
-                      className="text-slate-500 hover:text-slate-800"
-                    >
-                      {showPasswords[u.id] ? (
-                        <EyeOff size={18} />
-                      ) : (
-                        <Eye size={18} />
-                      )}
-                    </button>
-                  </div>
-                </td>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                        {showPasswords[u.id] ? u.password : "••••••••"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowPasswords((prev) => ({
+                            ...prev,
+                            [u.id]: !prev[u.id],
+                          }))
+                        }
+                        className="text-slate-500 hover:text-slate-800"
+                      >
+                        {showPasswords[u.id] ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </td>
 
                   <td className="p-4">
                     <span className="px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-700 text-sm font-semibold">
                       {u.jobRole}
                     </span>
                   </td>
+
+                  {/* Location Column */}
+                  <td className="p-4">
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-teal-50 text-teal-700 text-sm font-semibold border border-teal-100">
+                      <MapPin size={12} />
+                      {u.location || "—"}
+                    </span>
+                  </td>
+
                   <td className="p-4">
                     <div className="flex gap-2">
                       <button
@@ -270,6 +312,7 @@ export default function UsersPage() {
                       </button>
                     </div>
                   </td>
+
                   <td className="p-4">
                     <button
                       onClick={() => handleToggleStatus(u.id)}
@@ -278,7 +321,7 @@ export default function UsersPage() {
                           ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:shadow-md hover:shadow-green-500/30"
                           : "bg-gradient-to-r from-red-500 to-rose-500 text-white hover:shadow-md hover:shadow-red-500/30"
                       }`}
-                      title={`Click to set ${u.isActive ? 'Inactive' : 'Active'}`}
+                      title={`Click to set ${u.isActive ? "Inactive" : "Active"}`}
                     >
                       {u.isActive ? "Active" : "Inactive"}
                     </button>
@@ -295,14 +338,19 @@ export default function UsersPage() {
               <Users className="text-emerald-600" size={32} />
             </div>
             <p className="text-slate-600 font-medium">
-              {searchQuery ? "No employees found matching your search." : "No employees found."}
+              {searchQuery || locationFilter !== "All"
+                ? "No employees found matching your filters."
+                : "No employees found."}
             </p>
-            {searchQuery && (
+            {(searchQuery || locationFilter !== "All") && (
               <button
-                onClick={() => setSearchQuery("")}
+                onClick={() => {
+                  setSearchQuery("");
+                  setLocationFilter("All");
+                }}
                 className="mt-3 text-emerald-600 hover:text-emerald-700 font-semibold"
               >
-                Clear search
+                Clear filters
               </button>
             )}
           </div>

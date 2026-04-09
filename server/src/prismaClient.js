@@ -12,8 +12,8 @@ const prisma = new PrismaClient({
       // pool_timeout: give up waiting for a free connection after 30s (instead of hanging)
       // connect_timeout: fail fast if DB is sleeping/unreachable (10s instead of default 5s)
       url: process.env.DATABASE_URL?.includes("?")
-        ? `${process.env.DATABASE_URL}&connection_limit=5&pool_timeout=30&connect_timeout=10`
-        : `${process.env.DATABASE_URL}?connection_limit=5&pool_timeout=30&connect_timeout=10`,
+        ? `${process.env.DATABASE_URL}&connection_limit=15&pool_timeout=30&connect_timeout=10`
+        : `${process.env.DATABASE_URL}?connection_limit=15&pool_timeout=30&connect_timeout=10`,
     },
   },
 });

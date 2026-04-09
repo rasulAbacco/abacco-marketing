@@ -29,6 +29,7 @@
     "imap-simple": "^5.1.0",
     "imapflow": "^1.2.6",
     "jsonwebtoken": "^9.0.3",
+    "luxon": "^3.7.2",
     "mailparser": "^3.9.1",
     "multer": "^2.0.2",
     "node-cache": "^5.1.2",
