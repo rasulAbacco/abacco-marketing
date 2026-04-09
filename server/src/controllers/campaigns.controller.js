@@ -368,7 +368,7 @@ export const createFollowupCampaign = async (req, res) => {
     const baseCampaign = await prisma.campaign.findUnique({
       where:  { id: baseCampaignId },
       select: {
-        id: true, name: true, senderRole: true,
+        id: true, name: true, senderRole: true, customLimits: true,
         recipients: { select: { email: true, accountId: true } },
       },
     });
@@ -410,6 +410,8 @@ export const createFollowupCampaign = async (req, res) => {
         fromAccountIds:   JSON.stringify([]),
         pitchIds:         JSON.stringify([]),
         senderRole:       baseCampaign.senderRole || "",
+        // ✅ Inherit rate limits from parent so follow-ups obey the same /hr setting
+        customLimits:     baseCampaign.customLimits || null,
       },
     });
 

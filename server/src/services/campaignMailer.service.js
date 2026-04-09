@@ -552,7 +552,7 @@ async function processAccountBatched({
   }
 
   const limit         = getLimit(account.provider, account.id, customLimits);
-  const delayPerEmail = (60 * 60 * 1000) / limit;
+  const delayPerEmail = Math.floor((60 * 60 * 1000) / limit); // ms between emails to honour limit/hr
   const fromEmail     = account.smtpUser || account.email;
   const password      = decryptPassword(account);
   const transporter   = createTransporter(account, password);
@@ -565,7 +565,7 @@ async function processAccountBatched({
   let accountSendCount = 0;
   let accountStartTime = Date.now();
 
-  console.log(`📤 Account ${account.email}: starting batch send (limit=${limit}/hr)`);
+  console.log(`📤 Account ${account.email}: starting batch send (limit=${limit}/hr, delay=${Math.round(delayPerEmail/1000)}s per email)`);
 
   while (true) {
 
@@ -721,9 +721,8 @@ async function processAccountBatched({
         const newDailyTotal = await getDailyCount(userId);
         console.log(`📊 Daily sent: ${newDailyTotal}/${DAILY_LIMIT} (user ${userId})`);
 
-        // if (!recipient._isRetry) {
-        //   await sleep(delayPerEmail);
-        // }
+        // Enforce the user-selected hourly rate limit (e.g. 60/hr = 60 000 ms delay)
+        await sleep(delayPerEmail);
 
      } catch (err) {
       console.error(`❌ Send failed → ${recipient.email}:`, err.message);
