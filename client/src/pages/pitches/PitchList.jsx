@@ -77,7 +77,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
       {/* Header Section */}
-      <div className="bg-white dark:bg-slate-800 border-b border-emerald-100 dark:border-emerald-900 shadow-xl">
+      <div className="bg-green/20 dark:bg-slate-800 border-b border-emerald-50 dark:border-emerald-900">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="space-y-1">

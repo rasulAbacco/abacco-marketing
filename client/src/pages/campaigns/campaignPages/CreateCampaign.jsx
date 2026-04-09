@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useDailyLimit } from "./DailyLimitBanner";
+import { AlertTriangle } from "lucide-react";
 import {
   Send,
   Calendar,
@@ -125,6 +127,9 @@ export default function CreateCampaign() {
   const [senderRole, setSenderRole] = useState("");
   const [editingRole, setEditingRole] = useState(false);
   const [tempRole, setTempRole] = useState("");
+
+  // ── Daily limit ────────────────────────────────────────────
+  const dailyLimit = useDailyLimit();
 
 
   const formatText = (command, value = null) => {
@@ -361,6 +366,18 @@ export default function CreateCampaign() {
       if (!parsedEmails.length) {
         return setErrorMsg("Add at least one recipient");
       }
+
+      // ── Daily-limit guard ───────────────────────────────────
+      if (dailyLimit) {
+        if (parsedEmails.length > dailyLimit.remaining) {
+          return setErrorMsg(
+            `⚠️ Daily quota reached. You only have ${dailyLimit.remaining.toLocaleString()} email credits remaining today (limit: ${dailyLimit.dailyLimit.toLocaleString()}/day). ` +
+            `This campaign needs ${parsedEmails.length.toLocaleString()} recipients. Please reduce recipients or try again tomorrow.`
+          );
+        }
+      }
+      // ───────────────────────────────────────────────────────
+
       if (!editorRef.current?.innerHTML?.trim() && selectedPitchIds.length === 0) {
         return setErrorMsg("Email content is empty");
       }
@@ -1242,14 +1259,32 @@ export default function CreateCampaign() {
             </div>
           </div>
 
+          {/* ── Daily Limit Warning ─────────────────────────────── */}
+          {dailyLimit && parsedEmails.length > 0 && parsedEmails.length > dailyLimit.remaining && (
+            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
+              <AlertTriangle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-red-700">Daily Quota Exceeded</p>
+                <p className="text-xs text-red-600 mt-0.5 leading-relaxed">
+                  You have only <strong>{dailyLimit.remaining.toLocaleString()}</strong> credits remaining today (out of{" "}
+                  {dailyLimit.dailyLimit.toLocaleString()}). This campaign needs{" "}
+                  <strong>{parsedEmails.length.toLocaleString()}</strong> recipients.
+                  Please reduce recipients or try again tomorrow.
+                </p>
+              </div>
+            </div>
+          )}
+
           <button
             onClick={handleSend}
-            disabled={sending}
+            disabled={sending || (dailyLimit && parsedEmails.length > dailyLimit.remaining)}
             className={`w-full px-6 py-4 text-white rounded-xl font-black text-base transition-all flex items-center justify-center gap-3 shadow-lg transform hover:scale-105 ${
-              sending ? "opacity-60 cursor-not-allowed" : ""
+              sending || (dailyLimit && parsedEmails.length > dailyLimit.remaining)
+                ? "opacity-60 cursor-not-allowed"
+                : ""
             } ${
-              campaignType === "immediate" 
-                ? "bg-gradient-to-r from-emerald-600 to-green-600 hover:shadow-emerald-500/50" 
+              campaignType === "immediate"
+                ? "bg-gradient-to-r from-emerald-600 to-green-600 hover:shadow-emerald-500/50"
                 : "bg-gradient-to-r from-emerald-600 to-green-600 hover:shadow-emerald-500/50"
             }`}
           >

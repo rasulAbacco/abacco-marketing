@@ -1,6 +1,7 @@
 // FIXED: CampaignDetail.jsx - Follow-up creation and preview fixes
 import React, { useEffect, useState } from "react";
-import { Send, Plus, Trash2, Eye, Mail, Users, Target, Zap, CheckCircle2, Calendar, Sparkles, X, UserCog, Lock, Clock } from "lucide-react";
+import { Send, Plus, Trash2, Eye, Mail, Users, Target, Zap, CheckCircle2, Calendar, Sparkles, X, UserCog, Lock, Clock, AlertTriangle } from "lucide-react";
+import { useDailyLimit } from "./DailyLimitBanner";
 import ShowsRecipients from "./ShowsRecipients";
 import { useParams } from "react-router-dom";
 
@@ -66,6 +67,9 @@ export default function CampaignDetail() {
   const [campaignData, setCampaignData] = useState(null);
   const [followupLevel, setFollowupLevel] = useState(1);
   const { id } = useParams();
+
+  // ── Daily limit ─────────────────────────────────────────────
+  const dailyLimit = useDailyLimit();
 
 
   // ------------------------------
@@ -243,6 +247,21 @@ export default function CampaignDetail() {
       });
       return;
     }
+
+    // ── Daily-limit guard ────────────────────────────────────
+    const followUpRecipientCount = (loadedCampaign.recipients || []).filter(
+      r => r.status === "sent" || r.status === "completed"
+    ).length;
+
+    if (dailyLimit && followUpRecipientCount > dailyLimit.remaining) {
+      setModal({
+        open: true,
+        type: "error",
+        message: `⚠️ Daily quota exceeded. You only have ${dailyLimit.remaining.toLocaleString()} email credits remaining today (limit: ${dailyLimit.dailyLimit.toLocaleString()}/day). This follow-up needs ${followUpRecipientCount.toLocaleString()} recipients. Please try again tomorrow.`,
+      });
+      return;
+    }
+    // ─────────────────────────────────────────────────────────
 
     setSendingFollowup(true);
 
@@ -517,6 +536,28 @@ export default function CampaignDetail() {
                   dangerouslySetInnerHTML={{ __html: followUpBody }}
                 />
 
+                {/* ── Daily Limit Warning ──────────────────────────────── */}
+                {(() => {
+                  const recipientCount = (loadedCampaign?.recipients || []).filter(
+                    r => r.status === "sent" || r.status === "completed"
+                  ).length;
+                  const overLimit = dailyLimit && recipientCount > 0 && recipientCount > dailyLimit.remaining;
+                  return overLimit ? (
+                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4 mt-2">
+                      <AlertTriangle size={18} className="text-red-500 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-bold text-red-700">Daily Quota Exceeded</p>
+                        <p className="text-xs text-red-600 mt-0.5 leading-relaxed">
+                          You have only <strong>{dailyLimit.remaining.toLocaleString()}</strong> credits remaining today (out of{" "}
+                          {dailyLimit.dailyLimit.toLocaleString()}). This follow-up needs{" "}
+                          <strong>{recipientCount.toLocaleString()}</strong> recipients.
+                          Please try again tomorrow.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
                 {/* Actions */}
                 <div className="flex justify-end gap-3 pt-4">
                   <Button variant="outline" onClick={() => setPreview(!preview)}>
@@ -524,7 +565,12 @@ export default function CampaignDetail() {
                   </Button>
                   <Button
                     onClick={createFollowUp}
-                    disabled={sendingFollowup || !loadedCampaign}
+                    disabled={sendingFollowup || !loadedCampaign || (() => {
+                      const cnt = (loadedCampaign?.recipients || []).filter(
+                        r => r.status === "sent" || r.status === "completed"
+                      ).length;
+                      return dailyLimit && cnt > dailyLimit.remaining;
+                    })()}
                   >
                     {sendingFollowup ? (
                       <span className="animate-pulse">Sending...</span>

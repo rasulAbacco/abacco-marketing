@@ -397,3 +397,19 @@ enum LeadType {
   ATTENDEES
   INDUSTRY
 }
+
+model DailyEmailLog {
+  id Int @id @default(autoincrement())
+
+  userName String
+  empId    String
+
+  count Int
+
+  sentAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+  userId    String
+
+  @@unique([userId, sentAt])
+  @@index([userId, sentAt])
+}
