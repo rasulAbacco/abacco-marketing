@@ -113,10 +113,10 @@ export async function getDailyCount(userId) {
  *
  * @returns {boolean}
  */
-export function isWithinSendingWindow() {
-  const hour = new Date().getHours();
-  return hour >= 17 || hour < 5;
-}
+// export function isWithinSendingWindow() {
+//   const hour = new Date().getHours();
+//   return hour >= 17 || hour < 5;
+// }
 
 /**
  * Returns the number of milliseconds until the next 17:00 (5 PM).
@@ -137,7 +137,7 @@ export function msUntilNextWindow() {
  * Logs a human-readable wait time.
  */
 async function waitForSendingWindow() {
-  const waitMs = msUntilNextWindow();
+  const waitMs = null;
   const waitMin = Math.ceil(waitMs / 60_000);
   console.log(`⏳ Outside sending window (5 PM–5 AM). Pausing ${waitMin} min until next 5 PM.`);
   await sleep(waitMs);

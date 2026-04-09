@@ -4,8 +4,8 @@ import prisma from "../prisma.js";
 import {
   sendBulkCampaign,
   getDailyCount,
-  isWithinSendingWindow,
-  msUntilNextWindow,
+ 
+  
 } from "../services/campaignMailer.service.js";
 import cache from "../utils/cache.js";
 
@@ -35,34 +35,31 @@ async function checkGlobalSendingRules(userId) {
   const sentToday = await getDailyCount(userId);
 
   if (sentToday >= DAILY_LIMIT) {
-    const waitMs  = msUntilNextWindow();
-    const waitHrs = Math.ceil(waitMs / 3_600_000);
     return {
       status: 429,
       body: {
-        success:    false,
-        message:    `Daily sending limit reached (${sentToday}/${DAILY_LIMIT}). Resets at 5:00 PM — about ${waitHrs}h from now.`,
-        dailySent:  sentToday,
+        success: false,
+        message: `Daily sending limit reached (${sentToday}/${DAILY_LIMIT}).`,
+        dailySent: sentToday,
         dailyLimit: DAILY_LIMIT,
-        resetsIn:   waitMs,
       },
     };
   }
 
-  if (!isWithinSendingWindow()) {
-    const waitMs  = msUntilNextWindow();
-    const waitMin = Math.ceil(waitMs / 60_000);
-    return {
-      status: 403,
-      body: {
-        success:    false,
-        message:    `Emails can only be sent between 5:00 PM and 5:00 AM. Sending will resume automatically at the next 5:00 PM (in ~${waitMin} min).`,
-        dailySent:  sentToday,
-        dailyLimit: DAILY_LIMIT,
-        resetsIn:   waitMs,
-      },
-    };
-  }
+  // if (!isWithinSendingWindow()) {
+  //   const waitMs  = msUntilNextWindow();
+  //   const waitMin = Math.ceil(waitMs / 60_000);
+  //   return {
+  //     status: 403,
+  //     body: {
+  //       success:    false,
+  //       message:    `Emails can only be sent between 5:00 PM and 5:00 AM. Sending will resume automatically at the next 5:00 PM (in ~${waitMin} min).`,
+  //       dailySent:  sentToday,
+  //       dailyLimit: DAILY_LIMIT,
+  //       resetsIn:   waitMs,
+  //     },
+  //   };
+  // }
 
   return null;
 }
@@ -78,8 +75,8 @@ export const getDailyLimitStatus = async (req, res) => {
     const userId    = req.user.id;
     const sentToday = await getDailyCount(userId);
     const remaining = Math.max(0, DAILY_LIMIT - sentToday);
-    const inWindow  = isWithinSendingWindow();
-    const waitMs    = msUntilNextWindow();
+    const inWindow  =  true;
+    const waitMs    = null;
 
     return res.json({
       success: true,
@@ -89,8 +86,8 @@ export const getDailyLimitStatus = async (req, res) => {
         remaining,
         limitReached:   sentToday >= DAILY_LIMIT,
         withinWindow:   inWindow,
-        windowResetsIn: waitMs,
-        windowResetsAt: new Date(Date.now() + waitMs).toISOString(),
+        windowResetsIn: null,
+        windowResetsAt: null,
         percentUsed:    Math.min(100, Math.round((sentToday / DAILY_LIMIT) * 100)),
       },
     });
