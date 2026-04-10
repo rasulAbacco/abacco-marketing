@@ -349,6 +349,23 @@ export default function CreateCampaign() {
 
  
 
+  useEffect(() => {
+
+  const nowIST = new Date(
+
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+
+  );
+ 
+  const hours = String(nowIST.getHours()).padStart(2, "0");
+
+  const minutes = String(nowIST.getMinutes()).padStart(2, "0");
+ 
+  setScheduleTime(`${hours}:${minutes}`);
+
+}, []);
+ 
+
   const handleSend = async () => {
     try {
       setErrorMsg("");
@@ -877,7 +894,7 @@ export default function CreateCampaign() {
                     type="time"
                     value={scheduleTime}
                     onChange={(e) => setScheduleTime(e.target.value)}
-                    className="w-full border border-emerald-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    className="w-full border border-emerald-200 rounded-lg p-3"
                   />
                 </div>
               </div>
