@@ -151,13 +151,6 @@ export function msUntilNextWindow() {
  * Block execution until the next sending window opens (next 17:00).
  * Logs a human-readable wait time.
  */
-async function waitForSendingWindow() {
-  const waitMs = null;
-  const waitMin = Math.ceil(waitMs / 60_000);
-  console.log(`⏳ Outside sending window (5 PM–5 AM). Pausing ${waitMin} min until next 5 PM.`);
-  await sleep(waitMs);
-}
-
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SECTION 2 — UNCHANGED UTILITY HELPERS
@@ -614,8 +607,17 @@ async function processAccountBatched({
     // ── [C] Global daily-limit check (outer, before fetching a batch) ───
     const dailyCount = await getDailyCount(userId);
     if (dailyCount >= DAILY_LIMIT) {
-      console.log(`🚫 Daily limit (${DAILY_LIMIT}) reached for user ${userId}. Halting campaign ${campaignId}.`);
-      return;
+      console.log(`🚫 Daily limit reached. Waiting for reset...`);
+
+      const waitMs = msUntilNextWindow();
+      const waitMin = Math.ceil(waitMs / 60000);
+
+      console.log(`⏳ Sleeping ${waitMin} minutes until 5 PM reset`);
+
+      await sleep(waitMs);
+
+      console.log(`🔄 Resuming campaign after reset...`);
+      continue; // ✅ resume loop
     }
 
     // ── [D] Fetch next batch ─────────────────────────────────────────────
@@ -671,8 +673,13 @@ async function processAccountBatched({
       // ── [G] Daily limit check (inner — per-email, belt-and-suspenders) ─
       let currentCount = await getDailyCount(userId);
       if (currentCount >= DAILY_LIMIT) {
-        console.log(`🚫 Daily limit hit mid-batch for user ${userId}. Stopping send.`);
-        return;
+        console.log(`🚫 Limit hit mid-batch, waiting...`);
+
+        const waitMs = msUntilNextWindow();
+        await sleep(waitMs);
+
+        console.log(`🔄 Resuming after reset`);
+        continue;
       }
 
       // ── [H] Skip already-sent recipient ──────────────────────────────
@@ -1155,13 +1162,16 @@ export async function sendBulkCampaign(campaignId) {
   // ── 3. Global gate — daily limit ─────────────────────────────────────
   const sentToday = await getDailyCount(userId);
   if (sentToday >= DAILY_LIMIT) {
-    console.log(
-      `🚫 Daily limit already reached (${sentToday}/${DAILY_LIMIT}) for user ${userId}. ` +
-      `Campaign ${campaignId} will not start.`
-    );
-    // Do NOT mark the campaign as failed — leave it in "sending" so the
-    // operator can manually restart it after the counter resets.
-    return;
+    console.log(`🚫 Daily limit reached before start. Waiting...`);
+
+    const waitMs = msUntilNextWindow();
+    const waitMin = Math.ceil(waitMs / 60000);
+
+    console.log(`⏳ Sleeping ${waitMin} minutes until reset`);
+
+    await sleep(waitMs);
+
+    console.log(`🔄 Resuming campaign after reset`);
   }
 
   console.log("📦 Campaign loaded:", {
