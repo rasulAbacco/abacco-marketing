@@ -33,7 +33,9 @@ const DAILY_LIMIT = 5000;
  * @returns {string}
  */
 export function getTodayKey(userId) {
-  const now = new Date();
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
 
   // The reset boundary for TODAY
   const resetToday = new Date(now);
@@ -51,7 +53,9 @@ export function getTodayKey(userId) {
 
 
   function getTodayStart() {
-    const now = new Date();
+    const now = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
 
     const resetToday = new Date(now);
     resetToday.setHours(17, 0, 0, 0);
@@ -67,7 +71,10 @@ export function getTodayKey(userId) {
  * @returns {Promise<number>}
  */
 export async function getDailyCount(userId) {
-  const now = new Date();
+
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
 
   const resetToday = new Date(now);
   resetToday.setHours(17, 0, 0, 0);
@@ -125,7 +132,9 @@ export async function getDailyCount(userId) {
  * @returns {number} milliseconds
  */
 export function msUntilNextWindow() {
-  const now = new Date();
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
   const next = new Date(now);
   next.setHours(17, 0, 0, 0);
   if (now >= next) next.setDate(next.getDate() + 1); // already past 17:00 → next day
