@@ -880,7 +880,7 @@ export default function CreateCampaign() {
             {campaignType === "scheduled" && (
               <div className="grid grid-cols-2 gap-4 p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-200">
                 <div>
-                  <label className="block text-sm font-bold text-emerald-600 mb-2">Schedule Date</label>
+                  <label className="block text-sm font-bold text-emerald-600 mb-2">Schedule Date (IST)</label>
                   <input
                     type="date"
                     value={scheduleDate}
@@ -889,7 +889,7 @@ export default function CreateCampaign() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-emerald-600 mb-2">Schedule Time</label>
+                  <label className="block text-sm font-bold text-emerald-600 mb-2">Schedule Time (IST)</label>
                   <input
                     type="time"
                     value={scheduleTime}
