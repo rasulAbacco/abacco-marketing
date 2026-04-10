@@ -669,7 +669,7 @@ async function processAccountBatched({
       // }
 
       // ── [G] Daily limit check (inner — per-email, belt-and-suspenders) ─
-      const currentCount = await getDailyCount(userId);
+      let currentCount = await getDailyCount(userId);
       if (currentCount >= DAILY_LIMIT) {
         console.log(`🚫 Daily limit hit mid-batch for user ${userId}. Stopping send.`);
         return;

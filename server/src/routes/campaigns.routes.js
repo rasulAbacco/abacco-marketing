@@ -15,7 +15,8 @@ import {
   stopCampaign,
   updateFollowupRecipients,      // ✅ ADD
   sendFollowupCampaign,           // ✅ ADD
-  getDailyLimitStatus 
+  getDailyLimitStatus,
+  getAdminDailyOverview 
 } from "../controllers/campaigns.controller.js";
 
 const router = express.Router();
@@ -54,6 +55,6 @@ router.post("/followup/update-recipients", protect, updateFollowupRecipients);
 // Send followup manually
 router.post("/followup/:id/send", protect, sendFollowupCampaign);
 router.get("/daily-limit", protect, getDailyLimitStatus);
-
+router.get("/admin/daily-overview", protect, getAdminDailyOverview);
 
 export default router;

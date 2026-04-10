@@ -98,6 +98,119 @@ export const getDailyLimitStatus = async (req, res) => {
 };
 
 
+export const getAdminDailyOverview = async (req, res) => {
+  try {
+    // ── 1. Role guard ────────────────────────────────────────────────────────
+    // const role = String(req.user?.jobRole || "").trim().toLowerCase();
+    // if (role !== "admin" && role !== "hr") {
+    //   return res.status(403).json({ success: false, message: "Access denied" });
+    // }
+ 
+    // ── 2. All active users ──────────────────────────────────────────────────
+    const users = await prisma.user.findMany({
+      where:  { isActive: true },
+      select: { id: true, name: true, empId: true, email: true, jobRole: true },
+      orderBy: { name: "asc" },
+    });
+ 
+    // ── 3. IST-aware bucket start (same logic as getDailyCount) ──────────────
+    const nowIST = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
+    const resetToday = new Date(nowIST);
+    resetToday.setHours(17, 0, 0, 0);
+ 
+    const bucketStart =
+      nowIST < resetToday
+        ? new Date(resetToday.getTime() - 24 * 60 * 60 * 1000)
+        : resetToday;
+ 
+    // ── 4. Bulk-fetch DailyEmailLog rows for current bucket ──────────────────
+    const logs = await prisma.dailyEmailLog.groupBy({
+      by:    ["userId"],
+      _sum:  { count: true },
+      _max:  { sentAt: true },
+      where: { sentAt: { gte: bucketStart } },
+    });
+ 
+    const logMap = {};
+    for (const row of logs) {
+      logMap[row.userId] = {
+        sent:       row._sum.count || 0,
+        lastSentAt: row._max.sentAt,
+      };
+    }
+ 
+    // ── 5. Bulk-fetch active (sending) campaign counts per user ──────────────
+    const sendingCampaigns = await prisma.campaign.groupBy({
+      by:     ["userId"],
+      _count: { id: true },
+      where:  { status: "sending" },
+    });
+ 
+    const sendingMap = {};
+    for (const row of sendingCampaigns) {
+      sendingMap[row.userId] = row._count.id;
+    }
+ 
+    // ── 6. Build per-user rows ───────────────────────────────────────────────
+    let totalSentToday = 0;
+ 
+    const rows = users.map((u) => {
+      const dailySent      = logMap[u.id]?.sent       || 0;
+      const lastSentAt     = logMap[u.id]?.lastSentAt || null;
+      const activeCampaigns = sendingMap[u.id]        || 0;
+      const remaining      = Math.max(0, DAILY_LIMIT - dailySent);
+      const percentUsed    = Math.min(100, Math.round((dailySent / DAILY_LIMIT) * 100));
+ 
+      totalSentToday += dailySent;
+ 
+      // status logic:
+      // "sending"   → has at least one campaign currently sending
+      // "completed" → hit/exceeded daily limit
+      // "idle"      → sent nothing today
+      // "active"    → sent some emails, no campaign running right now
+      let status = "idle";
+      if (activeCampaigns > 0)     status = "sending";
+      else if (dailySent >= DAILY_LIMIT) status = "completed";
+      else if (dailySent > 0)      status = "active";
+ 
+      return {
+        userId:          u.id,
+        name:            u.name || u.email.split("@")[0],
+        empId:           u.empId || "—",
+        email:           u.email,
+        jobRole:         String(u.jobRole || "EMP").trim(),
+        dailySent,
+        dailyLimit:      DAILY_LIMIT,
+        remaining,
+        percentUsed,
+        status,
+        activeCampaigns,
+        lastSentAt,
+      };
+    });
+ 
+    // Sort: sending first, then active, then idle
+    const ORDER = { sending: 0, active: 1, completed: 2, idle: 3 };
+    rows.sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) || b.dailySent - a.dailySent);
+ 
+    return res.json({
+      success: true,
+      data: {
+        generatedAt:    new Date().toISOString(),
+        totalSentToday,
+        globalLimit:    DAILY_LIMIT * users.length,
+        users:          rows,
+      },
+    });
+ 
+  } catch (err) {
+    console.error("getAdminDailyOverview error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 /* ═══════════════════════════════════════════════════════════════════════════
    CREATE CAMPAIGN
 ═══════════════════════════════════════════════════════════════════════════ */

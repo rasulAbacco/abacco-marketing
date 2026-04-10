@@ -28,6 +28,7 @@ const navigationItems = [
   { name: "Campaigns", icon: Megaphone, path: "/campaigns" },
   { name: "Pitches", icon: FileText, path: "/pitches" },
   { name: "Analytics", icon: BarChart3, path: "/analytics" },
+  { name: "Daily Overview", icon: BarChart3, path: "/daily-overview" },
   { name: "Admin", icon: Shield, path: "/admin" },
 ];
 
@@ -103,6 +104,13 @@ export default function TopNavbar() {
     return role === "admin";
   };
 
+  // Check if user is admin or HR
+  const isHROrAdmin = () => {
+    if (!userData || !userData.jobRole) return false;
+    const role = String(userData.jobRole).toLowerCase().trim();
+    return role === "admin" || role === "hr";
+  };
+
   // Handle logout
   const handleLogout = () => {
     localStorage.removeItem("user");
@@ -113,6 +121,7 @@ export default function TopNavbar() {
 
   const filteredNavItems = navigationItems.filter((item) => {
     if (item.name === "Admin") return isAdmin();
+    if (item.name === "Daily Overview") return isHROrAdmin();
     return true;
   });
 

@@ -1,7 +1,7 @@
 // server/server.js
 import express from "express";
 import cors from "cors";
-import { PrismaClient } from "@prisma/client";
+import prisma from "./src/prismaClient.js";
 
 // Routes
 import accountRoutes from "./src/routes/inbox/accounts.js";
@@ -19,7 +19,7 @@ import { startFollowupCleanupJob } from "./src/controllers/campaigns.controller.
 import accountGroupsRoutes from "./src/routes/inbox/accountGroups.js"; // ✅ NEW
 
 const app = express();
-const prisma = new PrismaClient();
+
 
 // --------------------
 // Middlewares
@@ -143,12 +143,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   console.log(`✅ API server running on port ${PORT}`);
 
-  // Start scheduled campaign checker
-  startCampaignScheduler();
-
-  // 🔥 IMPORTANT: Resume campaigns that were interrupted
-  await resumeSendingCampaigns();
+  startCampaignScheduler(); // optional (can move to worker)
 });
-
 
 startFollowupCleanupJob();
