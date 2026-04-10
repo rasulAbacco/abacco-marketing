@@ -52,18 +52,24 @@ export function getTodayKey(userId) {
 }
 
 
-  function getTodayStart() {
-    const now = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-    );
+function getTodayStart() {
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
 
-    const resetToday = new Date(now);
-    resetToday.setHours(17, 0, 0, 0);
+  const resetToday = new Date(now);
+  resetToday.setHours(17, 0, 0, 0);
 
-    return now < resetToday
+  const start =
+    now < resetToday
       ? new Date(resetToday.getTime() - 24 * 60 * 60 * 1000)
       : resetToday;
-  }
+
+  // 🔥 CRITICAL FIX (normalize completely)
+  start.setMilliseconds(0);
+
+  return start;
+}
 
 /**
  * Fetch how many emails this user has sent in the current bucket.
