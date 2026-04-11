@@ -1320,6 +1320,13 @@ export async function sendBulkCampaign(campaignId) {
 
   // ── 10. Final status ──────────────────────────────────────────────────
   await updateCampaignStatus(campaignId);
+  // First immediate check
+ 
+
+// 🔥 Add delayed re-check (VERY IMPORTANT)
+setTimeout(async () => {
+  await updateCampaignStatus(campaignId);
+}, 5000); // 5 sec later
   console.log(`✅ Campaign ${campaignId} batch processing complete`);
 }
 
@@ -1329,19 +1336,22 @@ export async function sendBulkCampaign(campaignId) {
 ═══════════════════════════════════════════════════════════════════════════ */
 
 async function updateCampaignStatus(campaignId) {
+
   const stats = await prisma.campaignRecipient.groupBy({
-    by:    ["status"],
+    by: ["status"],
     where: { campaignId },
     _count: { status: true },
   });
 
-  const counts = { sent: 0, failed: 0, pending: 0 };
+  // ✅ ADD processing
+  const counts = { sent: 0, failed: 0, pending: 0, processing: 0 };
+
   for (const row of stats) {
     counts[row.status] = row._count.status;
   }
 
   const campaign = await prisma.campaign.findUnique({
-    where:  { id: campaignId },
+    where: { id: campaignId },
     select: { userId: true, status: true },
   });
 
@@ -1351,15 +1361,24 @@ async function updateCampaignStatus(campaignId) {
   }
 
   let finalStatus;
-  if (counts.pending > 0)                          finalStatus = "sending";
-  else if (counts.sent === 0 && counts.failed > 0) finalStatus = "failed";
-  else                                             finalStatus = "completed";
+
+  // ✅ FIX: include processing
+  if (counts.pending > 0 || counts.processing > 0) {
+    finalStatus = "sending";
+  } 
+  else if (counts.sent === 0 && counts.failed > 0) {
+    finalStatus = "failed";
+  } 
+  else {
+    finalStatus = "completed";
+  }
 
   await prisma.campaign.update({
     where: { id: campaignId },
-    data:  { status: finalStatus },
+    data: { status: finalStatus },
   });
 
+  // Cache clear (keep as is)
   if (campaign?.userId) {
     const ranges = ["today", "week", "month"];
     ranges.forEach(range => cache.del(`dashboard:${campaign.userId}:${range}`));
