@@ -332,6 +332,7 @@ model CampaignRecipient {
   retryCount    Int       @default(0)
   sendingIp     String?
   lastTriedAt   DateTime?
+  updatedAt     DateTime?
   campaign      Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, email])

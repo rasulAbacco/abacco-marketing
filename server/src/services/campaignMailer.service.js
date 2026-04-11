@@ -626,8 +626,9 @@ async function processAccountBatched({
         campaignId,
         accountId: Number(accountId),
         OR: [
-          { status: "pending" },
-        ],
+            { status: "pending" },
+            { status: "processing" } // ✅ ADD THIS
+          ],
       },
       orderBy: [
         { status: "desc" },       // retry before pending
@@ -642,9 +643,23 @@ async function processAccountBatched({
     }
 
     console.log(`📦 Account ${account.email}: processing batch of ${batch.length}`);
-
+ 
     for (const recipient of batch) {
 
+      await prisma.campaignRecipient.update({
+        where: { id: recipient.id },
+        data: {
+          status: "processing",
+        
+        },
+      });
+
+      const fresh = await prisma.campaignRecipient.findUnique({
+        where: { id: recipient.id },
+        select: { status: true },
+      });
+
+      if (fresh.status !== "processing") continue;
       // ── [E] Campaign stop check (inner) ──────────────────────────────
       const innerCheck = await prisma.campaign.findUnique({
         where:  { id: campaignId },
@@ -796,16 +811,21 @@ async function sendOneNormal({
 
   const html = buildNormalEmailHtml(body, signature, baseStyles);
 
-  await sendWithRetry(() =>
-    transporter.sendMail({
-      from: account.senderName
-        ? `"${account.senderName}" <${fromEmail}>`
-        : fromEmail,
-      to:      recipient.email,
-      subject,
-      html,
-    })
-  );
+  await Promise.race([
+    sendWithRetry(() =>
+      transporter.sendMail({
+        from: account.senderName
+          ? `"${account.senderName}" <${fromEmail}>`
+          : fromEmail,
+        to: recipient.email,
+        subject,
+        html,
+      })
+    ),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Hard Timeout")), 20000) // 20 sec max
+    )
+  ]);
 
   await prisma.conversation.upsert({
     where:  { id: `${account.id}_sent_${recipient.email}` },
@@ -1284,7 +1304,7 @@ export async function sendBulkCampaign(campaignId) {
     return;
   }
 
-  await Promise.all(
+  await Promise.allSettled(
     accountIds.map(accountId =>
       processAccountBatched({
         campaignId,

@@ -86,7 +86,9 @@ async function resumeSendingCampaigns() {
       const pendingCount = await prisma.campaignRecipient.count({
         where: {
           campaignId: campaign.id,
-          status: "pending"
+          status: {
+            in: ["pending", "processing"] // ✅ FIX
+          }
         }
       });
 
@@ -147,3 +149,4 @@ app.listen(PORT, async () => {
 });
 
 startFollowupCleanupJob();
+resumeSendingCampaigns();
