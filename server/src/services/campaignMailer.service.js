@@ -625,11 +625,8 @@ async function processAccountBatched({
       where: {
         campaignId,
         accountId: Number(accountId),
-        OR: [
-            { status: "pending" },
-            { status: "processing" } // ✅ ADD THIS
-          ],
-      },
+        status: "pending"
+        },
       orderBy: [
         { status: "desc" },       // retry before pending
         { id: "asc" },
@@ -646,13 +643,18 @@ async function processAccountBatched({
  
     for (const recipient of batch) {
 
-      await prisma.campaignRecipient.update({
-        where: { id: recipient.id },
-        data: {
-          status: "processing",
-        
-        },
-      });
+    const locked = await prisma.campaignRecipient.updateMany({
+      where: {
+        id: recipient.id,
+        status: "pending",
+      },
+      data: {
+        status: "processing",
+        updatedAt: new Date(), // 🔥 VERY IMPORTANT
+      },
+    });
+
+    if (locked.count === 0) continue; // already taken
 
       const fresh = await prisma.campaignRecipient.findUnique({
         where: { id: recipient.id },
