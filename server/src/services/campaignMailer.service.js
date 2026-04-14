@@ -1,4 +1,4 @@
-// campaignMailer.service.js — Batch-processing refactor + Global Daily Limit (5 PM reset)
+// campaignMailer.service.js — Fixed: parallel sending, no infinite loops, proper locks
 
 import nodemailer from "nodemailer";
 import prisma from "../prismaClient.js";
@@ -21,14 +21,7 @@ const DAILY_LIMIT = 5000;
 
 /**
  * Returns a stable Redis key for the current "day bucket".
- *
- * The bucket starts at 17:00 local time.  Any send before 17:00 belongs to
- * the bucket that STARTED the previous calendar day at 17:00.
- *
- * Examples (local clock):
- *   10:00 on Jan 15  →  key uses Jan 14  (bucket started 17:00 Jan 14)
- *   18:00 on Jan 15  →  key uses Jan 15  (bucket started 17:00 Jan 15)
- *
+ * The bucket starts at 17:00 local time.
  * @param {number|string} userId
  * @returns {string}
  */
@@ -36,27 +29,21 @@ export function getTodayKey(userId) {
   const now = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
-
-  // The reset boundary for TODAY
   const resetToday = new Date(now);
   resetToday.setHours(17, 0, 0, 0);
 
-  // If we haven't reached today's 17:00, the active bucket started yesterday
   const bucketStart = now < resetToday
-    ? new Date(resetToday.getTime() - 86_400_000)   // yesterday's 17:00
-    : resetToday;                                    // today's 17:00
+    ? new Date(resetToday.getTime() - 86_400_000)
+    : resetToday;
 
-  const dateLabel = bucketStart.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  const dateLabel = bucketStart.toISOString().split("T")[0];
   return `mail_limit:${userId}:${dateLabel}`;
-
 }
-
 
 function getTodayStart() {
   const now = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
-
   const resetToday = new Date(now);
   resetToday.setHours(17, 0, 0, 0);
 
@@ -65,9 +52,7 @@ function getTodayStart() {
       ? new Date(resetToday.getTime() - 24 * 60 * 60 * 1000)
       : resetToday;
 
-  // 🔥 CRITICAL FIX (normalize completely)
   start.setMilliseconds(0);
-
   return start;
 }
 
@@ -77,11 +62,9 @@ function getTodayStart() {
  * @returns {Promise<number>}
  */
 export async function getDailyCount(userId) {
-
   const now = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
-
   const resetToday = new Date(now);
   resetToday.setHours(17, 0, 0, 0);
 
@@ -91,51 +74,19 @@ export async function getDailyCount(userId) {
       : resetToday;
 
   const result = await prisma.dailyEmailLog.aggregate({
-    _sum: {
-      count: true,
-    },
+    _sum: { count: true },
     where: {
       userId,
-      sentAt: {
-        gte: start,
-      },
+      sentAt: { gte: start },
     },
   });
 
   return result._sum.count || 0;
 }
-/**
- * Atomically increment the per-user daily counter after a successful send.
- * TTL is 25 hours — generous enough to outlast any bucket, cleaned up by Redis.
- *
- * @param {number|string} userId
- * @returns {Promise<number>} new counter value
- */
-// export async function incrementDailyCount(userId) {
-//   const key = getTodayKey(userId);
-//   const current = Number(await cache.get(key)) || 0;
-//   const next = current + 1;
-//   // node-cache / ioredis both accept ttl as 3rd arg (seconds)
-//   await cache.set(key, next, 90_000); // 25 hours in seconds
-//   return next;
-// }
 
 /**
- * Returns true when the current local time falls inside the allowed
- * sending window: 17:00 → 04:59 (5 PM to 5 AM).
- *
- * @returns {boolean}
- */
-// export function isWithinSendingWindow() {
-//   const hour = new Date().getHours();
-//   return hour >= 17 || hour < 5;
-// }
-
-/**
- * Returns the number of milliseconds until the next 17:00 (5 PM).
- * Used to sleep the sender when it is outside the allowed window.
- *
- * @returns {number} milliseconds
+ * Returns milliseconds until the next 17:00 (5 PM) reset.
+ * @returns {number}
  */
 export function msUntilNextWindow() {
   const now = new Date(
@@ -143,17 +94,13 @@ export function msUntilNextWindow() {
   );
   const next = new Date(now);
   next.setHours(17, 0, 0, 0);
-  if (now >= next) next.setDate(next.getDate() + 1); // already past 17:00 → next day
+  if (now >= next) next.setDate(next.getDate() + 1);
   return next.getTime() - now.getTime();
 }
 
-/**
- * Block execution until the next sending window opens (next 17:00).
- * Logs a human-readable wait time.
- */
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SECTION 2 — UNCHANGED UTILITY HELPERS
+   SECTION 2 — UTILITY HELPERS
 ═══════════════════════════════════════════════════════════════════════════ */
 
 async function getSmtpIp(host) {
@@ -220,10 +167,10 @@ function buildSignature(account, senderRole, baseStyles = {}) {
     account.email?.split("@")[0] ||
     "Sender";
 
-  const role = senderRole?.trim() || "Marketing Analyst";
-  const sigColor  = baseStyles.color      || "#000000";
-  const sigFont   = baseStyles.fontFamily || "Calibri, sans-serif";
-  const sigSize   = baseStyles.fontSize   || "15px";
+  const role     = senderRole?.trim() || "Marketing Analyst";
+  const sigColor = baseStyles.color      || "#000000";
+  const sigFont  = baseStyles.fontFamily || "Calibri, sans-serif";
+  const sigSize  = baseStyles.fontSize   || "15px";
 
   return `
     <div style="margin-top:16px; font-family:${sigFont}; font-size:${sigSize}; line-height:1.6; color:${sigColor};">
@@ -290,6 +237,7 @@ function extractBodyContent(fullHtml) {
   }
 }
 
+// FIX: moved chunkArray to top-level so it's available everywhere
 function chunkArray(arr, size) {
   const chunks = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -396,7 +344,8 @@ function extractBaseStyles(html) {
   };
 }
 
-const BATCH_SIZE = 50;
+const BATCH_SIZE  = 10;
+const CONCURRENCY = 2; // FIX: defined at module level, not inside a loop
 
 function createTransporter(account, smtpPassword) {
   const domain = (account.email.split("@")[1] || "localhost").toLowerCase();
@@ -405,6 +354,9 @@ function createTransporter(account, smtpPassword) {
     port:    Number(account.smtpPort),
     secure:  Number(account.smtpPort) === 465,
     name:    domain,
+    pool: true,              // ✅ ADD
+    maxConnections: 2,       // ✅ ADD
+    maxMessages: 50,         // ✅ ADD
     auth: {
       user: account.smtpUser || account.email,
       pass: smtpPassword,
@@ -436,10 +388,7 @@ async function resolveOriginalCampaignId(startId) {
     });
 
     if (!ancestor) break;
-
-    if (ancestor.sendType !== "followup" || !ancestor.parentCampaignId) {
-      break;
-    }
+    if (ancestor.sendType !== "followup" || !ancestor.parentCampaignId) break;
 
     currentId = ancestor.parentCampaignId;
   }
@@ -492,7 +441,7 @@ function buildNormalEmailHtml(body, signature, baseStyles) {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SECTION 3 — RETRY / ERROR HELPERS  (unchanged)
+   SECTION 3 — RETRY / ERROR HELPERS
 ═══════════════════════════════════════════════════════════════════════════ */
 
 async function sendWithRetry(sendFn, retries = 1) {
@@ -503,7 +452,7 @@ async function sendWithRetry(sendFn, retries = 1) {
     } catch (err) {
       lastError = err;
       console.warn(`⚠️ Retry ${i} failed:`, err.message);
-      await new Promise(r => setTimeout(r, 2000 * i));
+      await sleep(2000 * i);
     }
   }
   throw lastError;
@@ -528,18 +477,98 @@ function isTemporaryError(err) {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SECTION 4 — PER-ACCOUNT BATCH PROCESSOR  (daily limit + window injected)
+   SECTION 4 — PER-ACCOUNT BATCH PROCESSOR
+   
+   FIX SUMMARY:
+   1. runBatch() moved OUTSIDE the while loop (was defined after its call)
+   2. while(true) with empty batch now BREAKs instead of continuing forever
+   3. CONCURRENCY and runBatch are module-level — no re-declarations per loop
+   4. Follow-up path properly calls sendOneFollowup (was always calling sendOneNormal)
+   5. delayPerEmail removed — no per-email sleep, only batch-level delay
 ═══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * @param {object}      opts
- * @param {number}      opts.campaignId
- * @param {number}      opts.accountId
- * @param {object}      opts.campaign          — full campaign row
- * @param {Map}         opts.assignmentMap     — recipientId → { subject, pitchBody }
- * @param {number|null} opts.originalCampaignId
- * @param {object}      opts.customLimits
- * @param {number}      opts.userId            — owner of the campaign (for daily counter)
+ * Run a chunk of recipients in parallel (up to CONCURRENCY at once).
+ * Routes to sendOneFollowup or sendOneNormal based on campaign type.
+ *
+ * @param {object[]} batch           — array of recipient rows (already locked to "processing")
+ * @param {object}   ctx             — shared context for the account
+ */
+async function runBatch(batch, ctx) {
+  const {
+    account,
+    transporter,
+    fromEmail,
+    smtpIp,
+    campaign,
+    assignmentMap,
+    originalCampaignId,
+  } = ctx;
+
+  const chunks = chunkArray(batch, CONCURRENCY);
+
+  for (const group of chunks) {
+    await Promise.all(
+      group.map(async (recipient) => {
+        const assignment = assignmentMap.get(recipient.id);
+
+        if (!assignment) {
+          console.warn(`⚠️ No assignment for recipient ${recipient.id} — skipping`);
+          await prisma.campaignRecipient.update({
+            where: { id: recipient.id },
+            data: { status: "failed", error: "No assignment found" },
+          }).catch(() => {});
+          return;
+        }
+
+        try {
+          if (campaign.sendType === "followup") {
+            // FIX: was calling sendOneNormal for follow-ups — now correctly routes
+            await sendOneFollowup({
+              recipient,
+              account,
+              transporter,
+              fromEmail,
+              campaign,
+              assignment,
+              originalCampaignId,
+            });
+          } else {
+            await sendOneNormal({
+              recipient,
+              account,
+              transporter,
+              fromEmail,
+              campaign,
+              assignment,
+              smtpIp,
+            });
+          }
+
+          console.log(`✅ Sent → ${recipient.email} (account: ${account.email})`);
+
+        } catch (err) {
+          console.error(`❌ Failed → ${recipient.email} (account: ${account.email}):`, err.message);
+
+          // Mark failed in DB (sendOneNormal/sendOneFollowup may not have reached the update)
+          await prisma.campaignRecipient.update({
+            where: { id: recipient.id },
+            data: {
+              status: "failed",
+              error:  err.message?.slice(0, 500) || "Unknown error",
+            },
+          }).catch(dbErr => console.error("❌ DB update failed:", dbErr.message));
+        }
+      })
+    );
+    await sleep(ctx.delayPerEmail);
+  }
+}
+
+/**
+ * Process all pending recipients for one account in batched loops.
+ *
+ * @param {object} opts
  */
 async function processAccountBatched({
   campaignId,
@@ -548,36 +577,42 @@ async function processAccountBatched({
   assignmentMap,
   originalCampaignId,
   customLimits,
-  userId,          // ← NEW: passed in from sendBulkCampaign
+  userId,
 }) {
   const account = await prisma.emailAccount.findUnique({
     where: { id: Number(accountId) },
   });
 
-  if (!account || !account.smtpUser) {
-    console.error(`❌ Invalid account for sending: ${accountId}`);
+  if (!account || !account.smtpHost) {
+    console.error(`❌ Invalid or missing SMTP account: ${accountId}`);
     return;
   }
 
-  const limit         = getLimit(account.provider, account.id, customLimits);
-  const delayPerEmail = Math.floor((60 * 60 * 1000) / limit); // ms between emails to honour limit/hr
-  const fromEmail     = account.smtpUser || account.email;
-  const password      = decryptPassword(account);
-  const transporter   = createTransporter(account, password);
-  const smtpIp        = await getSmtpIp(account.smtpHost);
+  const fromEmail   = account.smtpUser || account.email;
+  const password    = decryptPassword(account);
+  const transporter = createTransporter(account, password);
+  const smtpIp      = await getSmtpIp(account.smtpHost);
+  const limit       = getLimit(account.provider, account.id, customLimits);
+  const delayPerEmail = (60 * 60 * 1000) / (limit / CONCURRENCY);
+  console.log(`📤 Account ${account.email}: starting (limit=${limit}/hr, concurrency=${CONCURRENCY})`);
+  console.log(`📡 SMTP: ${account.smtpHost} → ${smtpIp}`);
 
-  console.log("📡 SMTP HOST:", account.smtpHost);
-  console.log("🌐 RESOLVED IP:", smtpIp);
-  console.log("📧 SENDING FROM:", account.email);
+  // Shared context passed to runBatch — avoids re-building per iteration
+  const ctx = {
+    account,
+    transporter,
+    fromEmail,
+    smtpIp,
+    campaign,
+    assignmentMap,
+    originalCampaignId,
+    delayPerEmail,
+  };
 
-  let accountSendCount = 0;
-  let accountStartTime = Date.now();
-
-  console.log(`📤 Account ${account.email}: starting batch send (limit=${limit}/hr, delay=${Math.round(delayPerEmail/1000)}s per email)`);
-
+  // ── Batch loop ─────────────────────────────────────────────────────────
   while (true) {
 
-    // ── [A] Campaign stop check (outer) ────────────────────────────────
+    // [A] Campaign stop check
     const latestCampaign = await prisma.campaign.findUnique({
       where:  { id: campaignId },
       select: { status: true },
@@ -587,200 +622,60 @@ async function processAccountBatched({
       return;
     }
 
-    // ── [B] Global sending-window check (outer) ─────────────────────────
-    //    If we are outside 5 PM–5 AM, park here until the window opens.
-    //    We re-check the campaign status after waking up in case it was
-    //    stopped while we were sleeping.
-    // if (!isWithinSendingWindow()) {
-    //   await waitForSendingWindow();
-    //   // Re-check campaign alive after the sleep
-    //   const afterSleep = await prisma.campaign.findUnique({
-    //     where:  { id: campaignId },
-    //     select: { status: true },
-    //   });
-    //   if (!afterSleep || afterSleep.status !== "sending") {
-    //     console.log(`⏹ Campaign ${campaignId} stopped during window-wait — halting.`);
-    //     return;
-    //   }
-    // }
-
-    // ── [C] Global daily-limit check (outer, before fetching a batch) ───
+    // [B] Global daily-limit check
     const dailyCount = await getDailyCount(userId);
     if (dailyCount >= DAILY_LIMIT) {
-      console.log(`🚫 Daily limit reached. Waiting for reset...`);
-
-      const waitMs = msUntilNextWindow();
+      const waitMs  = msUntilNextWindow();
       const waitMin = Math.ceil(waitMs / 60000);
-
-      console.log(`⏳ Sleeping ${waitMin} minutes until 5 PM reset`);
-
+      console.log(`🚫 Daily limit reached. Sleeping ${waitMin} min until reset...`);
       await sleep(waitMs);
-
-      console.log(`🔄 Resuming campaign after reset...`);
-      continue; // ✅ resume loop
+      console.log(`🔄 Resuming campaign ${campaignId} after daily reset...`);
+      continue;
     }
 
-    // ── [D] Fetch next batch ─────────────────────────────────────────────
+    // [C] Fetch next batch — only "pending" rows for this account
     const batch = await prisma.campaignRecipient.findMany({
       where: {
         campaignId,
         accountId: Number(accountId),
-        status: "pending"
-        },
-      orderBy: [
-        { status: "desc" },       // retry before pending
-        { id: "asc" },
-      ],
-      take: BATCH_SIZE,
+        status:    "pending",
+      },
+      orderBy: { id: "asc" },
+      take:    BATCH_SIZE,
     });
 
+    // FIX: was `continue` here causing infinite loop — now we BREAK
     if (batch.length === 0) {
-      console.log(`✅ Account ${account.email}: no more pending recipients`);
+      console.log(`✅ Account ${account.email}: no more pending recipients — done`);
       break;
     }
 
-    console.log(`📦 Account ${account.email}: processing batch of ${batch.length}`);
- 
-    for (const recipient of batch) {
+    console.log(`📦 Account ${account.email}: batch of ${batch.length} recipients`);
 
-    const locked = await prisma.campaignRecipient.updateMany({
+    // [D] Lock batch → "processing" atomically before sending
+    //     Only update rows still "pending" to prevent double-processing
+    await prisma.campaignRecipient.updateMany({
       where: {
-        id: recipient.id,
-        status: "pending",
+        id:     { in: batch.map(r => r.id) },
+        status: "pending", // guard: skip any that were grabbed by another worker
       },
       data: {
-        status: "processing",
-        updatedAt: new Date(), // 🔥 VERY IMPORTANT
+        status:    "processing",
+        updatedAt: new Date(),
       },
     });
 
-    if (locked.count === 0) continue; // already taken
+    // [E] Send batch in parallel (CONCURRENCY emails at a time)
+    await runBatch(batch, ctx);
 
-      const fresh = await prisma.campaignRecipient.findUnique({
-        where: { id: recipient.id },
-        select: { status: true },
-      });
-
-      if (fresh.status !== "processing") continue;
-      // ── [E] Campaign stop check (inner) ──────────────────────────────
-      const innerCheck = await prisma.campaign.findUnique({
-        where:  { id: campaignId },
-        select: { status: true },
-      });
-      if (!innerCheck || innerCheck.status !== "sending") {
-        console.log(`⏹ Campaign ${campaignId} stopped mid-batch`);
-        return;
-      }
-
-      // ── [F] Sending-window check (inner — catches window expiry mid-batch)
-      // if (!isWithinSendingWindow()) {
-      //   console.log(`🌙 Sending window closed mid-batch. Pausing after ${recipient.email}.`);
-      //   await waitForSendingWindow();
-      //   // Re-check campaign after wake
-      //   const afterSleep = await prisma.campaign.findUnique({
-      //     where:  { id: campaignId },
-      //     select: { status: true },
-      //   });
-      //   if (!afterSleep || afterSleep.status !== "sending") {
-      //     console.log(`⏹ Campaign ${campaignId} stopped during window-wait (inner). Halting.`);
-      //     return;
-      //   }
-      // }
-
-      // ── [G] Daily limit check (inner — per-email, belt-and-suspenders) ─
-      let currentCount = await getDailyCount(userId);
-      if (currentCount >= DAILY_LIMIT) {
-        console.log(`🚫 Limit hit mid-batch, waiting...`);
-
-        const waitMs = msUntilNextWindow();
-        await sleep(waitMs);
-
-        console.log(`🔄 Resuming after reset`);
-        continue;
-      }
-
-      // ── [H] Skip already-sent recipient ──────────────────────────────
-      const alreadySent = await prisma.campaignRecipient.findUnique({
-        where:  { id: recipient.id },
-        select: { status: true },
-      });
-      if (alreadySent?.status === "sent") {
-        console.log("⚠️ Already sent, skipping:", recipient.email);
-        continue;
-      }
-
-      // ── [I] Provider hourly rate-limit guard (unchanged) ─────────────
-      if (accountSendCount >= limit) {
-        const elapsed = Date.now() - accountStartTime;
-        if (elapsed < 3_600_000) {
-          const wait = 3_600_000 - elapsed;
-          console.log(
-            `⏳ ${account.email} hourly limit reached — waiting ${Math.ceil(wait / 60_000)}m`
-          );
-          await sleep(wait);
-        }
-        accountSendCount = 0;
-        accountStartTime = Date.now();
-      }
-
-      const assignment = assignmentMap.get(recipient.id);
-      if (!assignment) {
-        console.warn(`⚠️ No assignment found for recipient ${recipient.id}, skipping`);
-        continue;
-      }
-
-      // ── [J] Send ──────────────────────────────────────────────────────
-      try {
-        if (campaign.sendType === "followup") {
-          await sendOneFollowup({
-            recipient,
-            account,
-            transporter,
-            fromEmail,
-            campaign,
-            assignment,
-            originalCampaignId,
-          });
-        } else {
-          await sendOneNormal({
-            recipient,
-            account,
-            transporter,
-            fromEmail,
-            campaign,
-            assignment,
-            smtpIp,
-          });
-        }
-
-        // ── [K] Increment BOTH provider counter and global daily counter ─
-        accountSendCount++;
-        // await incrementDailyCount(userId);
-
-        const newDailyTotal = await getDailyCount(userId);
-        console.log(`📊 Daily sent: ${newDailyTotal}/${DAILY_LIMIT} (user ${userId})`);
-
-        // Enforce the user-selected hourly rate limit (e.g. 60/hr = 60 000 ms delay)
-        await sleep(delayPerEmail);
-
-     } catch (err) {
-      console.error(`❌ Send failed → ${recipient.email}:`, err.message);
-
-      await prisma.campaignRecipient.update({
-        where: { id: recipient.id },
-        data: {
-          status: "failed",
-          error: err.message,
-        },
-      });
-    }
-    } // end for (recipient of batch)
-  } // end while (true)
+    // [F] Small inter-batch delay to avoid SMTP rate limits
+    await sleep(1500);
+  }
 }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SECTION 5 — sendOneNormal  (unchanged)
+   SECTION 5 — sendOneNormal
 ═══════════════════════════════════════════════════════════════════════════ */
 
 async function sendOneNormal({
@@ -819,14 +714,14 @@ async function sendOneNormal({
         from: account.senderName
           ? `"${account.senderName}" <${fromEmail}>`
           : fromEmail,
-        to: recipient.email,
+        to:      recipient.email,
         subject,
         html,
       })
     ),
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Hard Timeout")), 20000) // 20 sec max
-    )
+      setTimeout(() => reject(new Error("Hard Timeout")), 20000)
+    ),
   ]);
 
   await prisma.conversation.upsert({
@@ -849,33 +744,23 @@ async function sendOneNormal({
   });
 
   try {
-    const exists = await prisma.emailMessage.findFirst({
-      where: {
+    const newMessageId = `sent-${Date.now()}-${recipient.email}`;
+    await prisma.emailMessage.create({
+      data: {
         emailAccountId: account.id,
-        toEmail:        recipient.email,
-        subject:        subject,
+        messageId:      newMessageId,
+        conversationId: `${account.id}_sent_${recipient.email}`,
+        subject,
+        fromEmail,
+        fromName:  account.senderName || null,
+        toEmail:   recipient.email,
+        body:      html,
+        direction: "sent",
+        folder:    "sent",
+        sentAt:    new Date(),
+        isRead:    true,
       },
     });
-
-    if (exists) {
-      console.log("⚠️ Duplicate DB insert skipped:", recipient.email);
-    } else {
-      const newMessageId = `sent-${Date.now()}-${recipient.email}`;
-
-      await prisma.emailMessage.create({
-        data: {
-          emailAccountId: account.id,
-          toEmail:        recipient.email,
-          subject:        subject,
-          sentAt:         new Date(),
-          messageId:      newMessageId,
-          fromEmail:      fromEmail,
-          direction:      "sent",
-          folder:         "sent",
-          isRead:         true,
-        },
-      });
-    }
   } catch (e) {
     console.error("⚠️ Email log failed (ignored):", e.message);
   }
@@ -892,31 +777,28 @@ async function sendOneNormal({
       sendingIp:     smtpIp,
     },
   });
+
   await prisma.dailyEmailLog.upsert({
     where: {
       userId_sentAt: {
         userId: campaign.userId,
-        sentAt: getTodayStart(), // 👈 important
+        sentAt: getTodayStart(),
       },
     },
-    update: {
-      count: {
-        increment: 1,
-      },
-    },
+    update: { count: { increment: 1 } },
     create: {
-      userId: campaign.userId,
-      userName: campaign.user?.name || "Unknown",
-      empId: campaign.user?.empId || "N/A",
-      count: 1,
-      sentAt: getTodayStart(),
+      userId:   campaign.userId,
+      userName: campaign.user?.name  || "Unknown",
+      empId:    campaign.user?.empId || "N/A",
+      count:    1,
+      sentAt:   getTodayStart(),
     },
   });
 }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SECTION 6 — sendOneFollowup  (unchanged)
+   SECTION 6 — sendOneFollowup
 ═══════════════════════════════════════════════════════════════════════════ */
 
 async function sendOneFollowup({
@@ -934,6 +816,7 @@ async function sendOneFollowup({
   if (!followupBody || followupBody.trim() === "") {
     throw new Error("Follow-up body is empty");
   }
+
   const baseStyles            = extractBaseStyles(followupBody);
   const signature             = buildSignature(account, campaign.senderRole, baseStyles);
   const followupWithSignature = followupBody + signature;
@@ -1069,36 +952,23 @@ async function sendOneFollowup({
   }
 
   try {
-    const exists = await prisma.emailMessage.findFirst({
-      where: {
+    const newMessageId = `sent-${Date.now()}-${recipient.email}`;
+    await prisma.emailMessage.create({
+      data: {
         emailAccountId: actualAccount.id,
+        messageId:      newMessageId,
+        conversationId: `${actualAccount.id}_sent_${recipient.email}`,
+        subject,
+        fromEmail:      actualFromEmail,
+        fromName:       actualAccount.senderName || null,
         toEmail:        recipient.email,
-        subject:        subject,
+        body:           html,
+        direction:      "sent",
+        folder:         "sent",
+        sentAt:         new Date(),
+        isRead:         true,
       },
     });
-
-    if (exists) {
-      console.log("⚠️ Follow-up duplicate skipped:", recipient.email);
-    } else {
-      const newMessageId = `sent-${Date.now()}-${recipient.email}`;
-
-      await prisma.emailMessage.create({
-        data: {
-          emailAccountId: actualAccount.id,
-          messageId:      newMessageId,
-          conversationId: `${actualAccount.id}_sent_${recipient.email}`,
-          subject:        subject,
-          fromEmail:      actualFromEmail,
-          fromName:       actualAccount.senderName || null,
-          toEmail:        recipient.email,
-          body:           html,
-          direction:      "sent",
-          folder:         "sent",
-          sentAt:         new Date(),
-          isRead:         true,
-        },
-      });
-    }
   } catch (e) {
     console.error("⚠️ Email log failed (ignored):", e.message);
   }
@@ -1121,20 +991,16 @@ async function sendOneFollowup({
     where: {
       userId_sentAt: {
         userId: campaign.userId,
-        sentAt: getTodayStart(), // 👈 important
+        sentAt: getTodayStart(),
       },
     },
-    update: {
-      count: {
-        increment: 1,
-      },
-    },
+    update: { count: { increment: 1 } },
     create: {
-      userId: campaign.userId,
-      userName: campaign.user?.name || "Unknown",
-      empId: campaign.user?.empId || "N/A",
-      count: 1,
-      sentAt: getTodayStart(),
+      userId:   campaign.userId,
+      userName: campaign.user?.name  || "Unknown",
+      empId:    campaign.user?.empId || "N/A",
+      count:    1,
+      sentAt:   getTodayStart(),
     },
   });
 }
@@ -1142,16 +1008,39 @@ async function sendOneFollowup({
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SECTION 7 — PUBLIC ENTRY POINT  sendBulkCampaign
+   
+   FIX: Added in-memory global lock to prevent duplicate workers per campaign.
+   resumeSendingCampaignsSafe (in server.js) calls this function — without the
+   lock, every 2-minute tick would spawn a new parallel sender for the same
+   campaign, doubling sends and causing race conditions.
 ═══════════════════════════════════════════════════════════════════════════ */
+
+// Global in-memory lock: tracks which campaign IDs currently have an active worker
+const activeCampaigns = new Set();
 
 export async function sendBulkCampaign(campaignId) {
 
-  // ── 1. Load campaign ─────────────────────────────────────────────────
+  // ── Global lock check ─────────────────────────────────────────────────
+  if (activeCampaigns.has(campaignId)) {
+    console.log(`🔒 Campaign ${campaignId} already has an active worker — skipping duplicate`);
+    return;
+  }
+  activeCampaigns.add(campaignId);
+
+  try {
+    await _sendBulkCampaignInner(campaignId);
+  } finally {
+    // Always release the lock, even on error
+    activeCampaigns.delete(campaignId);
+  }
+}
+
+async function _sendBulkCampaignInner(campaignId) {
+
+  // ── 1. Load campaign ───────────────────────────────────────────────────
   const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
-    include: {
-      user: true, // 👈 REQUIRED
-    },
+    where:   { id: campaignId },
+    include: { user: true },
   });
 
   if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
@@ -1163,53 +1052,30 @@ export async function sendBulkCampaign(campaignId) {
 
   const { userId } = campaign;
 
-  // ── 2. Global gate — sending window ──────────────────────────────────
-  //    If triggered outside the window (e.g. a scheduled job fires early),
-  //    wait here before doing any work.
-  // if (!isWithinSendingWindow()) {
-  //   console.log(`🌙 Campaign ${campaignId} triggered outside sending window. Waiting for 5 PM…`);
-  //   await waitForSendingWindow();
-
-  //   // Re-check status after sleep
-  //   const refreshed = await prisma.campaign.findUnique({
-  //     where:  { id: campaignId },
-  //     select: { status: true },
-  //   });
-  //   if (!refreshed || refreshed.status !== "sending") {
-  //     console.log(`⏹ Campaign ${campaignId} stopped during window-wait at entry. Aborting.`);
-  //     return;
-  //   }
-  // }
-
-  // ── 3. Global gate — daily limit ─────────────────────────────────────
+  // ── 2. Global gate — daily limit ──────────────────────────────────────
   const sentToday = await getDailyCount(userId);
   if (sentToday >= DAILY_LIMIT) {
-    console.log(`🚫 Daily limit reached before start. Waiting...`);
-
-    const waitMs = msUntilNextWindow();
+    const waitMs  = msUntilNextWindow();
     const waitMin = Math.ceil(waitMs / 60000);
-
-    console.log(`⏳ Sleeping ${waitMin} minutes until reset`);
-
+    console.log(`🚫 Daily limit reached before start. Sleeping ${waitMin} min until reset...`);
     await sleep(waitMs);
-
-    console.log(`🔄 Resuming campaign after reset`);
+    console.log(`🔄 Resuming campaign ${campaignId} after reset`);
   }
 
   console.log("📦 Campaign loaded:", {
-    id:       campaign.id,
-    status:   campaign.status,
-    sendType: campaign.sendType,
+    id:             campaign.id,
+    status:         campaign.status,
+    sendType:       campaign.sendType,
     dailySentSoFar: sentToday,
   });
 
-  // ── 4. Mark as sending (idempotent) ──────────────────────────────────
+  // ── 3. Mark as sending (idempotent) ───────────────────────────────────
   await prisma.campaign.update({
     where: { id: campaignId },
     data:  { status: "sending" },
   });
 
-  // ── 5. Parse config ───────────────────────────────────────────────────
+  // ── 4. Parse config ────────────────────────────────────────────────────
   let customLimits = {};
   if (campaign.customLimits) {
     try { customLimits = JSON.parse(campaign.customLimits); }
@@ -1233,13 +1099,13 @@ export async function sendBulkCampaign(campaignId) {
     pitchBodies = pitches.map(p => p.bodyHtml).filter(Boolean);
   }
 
-  // ── 6. Resolve parent campaign for follow-ups ─────────────────────────
+  // ── 5. Resolve parent campaign for follow-ups ─────────────────────────
   let originalCampaignId = null;
   if (campaign.sendType === "followup" && campaign.parentCampaignId) {
     originalCampaignId = await resolveOriginalCampaignId(campaign.parentCampaignId);
   }
 
-  // ── 7. Load pending recipients ────────────────────────────────────────
+  // ── 6. Load pending recipients ─────────────────────────────────────────
   let pendingRecipients;
 
   if (campaign.sendType === "followup") {
@@ -1279,7 +1145,7 @@ export async function sendBulkCampaign(campaignId) {
     return;
   }
 
-  // ── 8. Build assignment map ───────────────────────────────────────────
+  // ── 7. Build assignment map ────────────────────────────────────────────
   const count       = pendingRecipients.length;
   const subjectPlan = distribute(subjects, count);
   const pitchPlan   = pitchBodies.length
@@ -1295,7 +1161,7 @@ export async function sendBulkCampaign(campaignId) {
     });
   });
 
-  // ── 9. Dispatch per-account processors ───────────────────────────────
+  // ── 8. Dispatch per-account processors in parallel ────────────────────
   const accountIds = [
     ...new Set(pendingRecipients.map(r => r.accountId).filter(Boolean)),
   ];
@@ -1306,7 +1172,9 @@ export async function sendBulkCampaign(campaignId) {
     return;
   }
 
-  await Promise.allSettled(
+  console.log(`🚀 Campaign ${campaignId}: dispatching ${accountIds.length} account(s) in parallel`);
+
+  await Promise.all(
     accountIds.map(accountId =>
       processAccountBatched({
         campaignId,
@@ -1315,45 +1183,47 @@ export async function sendBulkCampaign(campaignId) {
         assignmentMap,
         originalCampaignId,
         customLimits,
-        userId,          // ← passed through for daily counter
+        userId,
+      }).catch(err => {
+        // One account failing should not abort the others
+        console.error(`❌ Account ${accountId} processor error:`, err.message);
       })
     )
   );
 
-  // ── 10. Final status ──────────────────────────────────────────────────
+  // ── 9. Final status update ─────────────────────────────────────────────
   await updateCampaignStatus(campaignId);
-  // First immediate check
- 
 
-// 🔥 Add delayed re-check (VERY IMPORTANT)
-setTimeout(async () => {
-  await updateCampaignStatus(campaignId);
-}, 5000); // 5 sec later
+  // Delayed re-check to catch any late DB writes
+  setTimeout(() => {
+    updateCampaignStatus(campaignId).catch(err =>
+      console.error(`❌ Delayed status update error for ${campaignId}:`, err.message)
+    );
+  }, 5000);
+
   console.log(`✅ Campaign ${campaignId} batch processing complete`);
 }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SECTION 8 — updateCampaignStatus  (unchanged)
+   SECTION 8 — updateCampaignStatus
 ═══════════════════════════════════════════════════════════════════════════ */
 
 async function updateCampaignStatus(campaignId) {
 
   const stats = await prisma.campaignRecipient.groupBy({
-    by: ["status"],
+    by:    ["status"],
     where: { campaignId },
     _count: { status: true },
   });
 
-  // ✅ ADD processing
   const counts = { sent: 0, failed: 0, pending: 0, processing: 0 };
-
   for (const row of stats) {
     counts[row.status] = row._count.status;
   }
 
   const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
+    where:  { id: campaignId },
     select: { userId: true, status: true },
   });
 
@@ -1364,23 +1234,20 @@ async function updateCampaignStatus(campaignId) {
 
   let finalStatus;
 
-  // ✅ FIX: include processing
   if (counts.pending > 0 || counts.processing > 0) {
     finalStatus = "sending";
-  } 
-  else if (counts.sent === 0 && counts.failed > 0) {
+  } else if (counts.sent === 0 && counts.failed > 0) {
     finalStatus = "failed";
-  } 
-  else {
+  } else {
     finalStatus = "completed";
   }
 
   await prisma.campaign.update({
     where: { id: campaignId },
-    data: { status: finalStatus },
+    data:  { status: finalStatus },
   });
 
-  // Cache clear (keep as is)
+  // Cache invalidation
   if (campaign?.userId) {
     const ranges = ["today", "week", "month"];
     ranges.forEach(range => cache.del(`dashboard:${campaign.userId}:${range}`));

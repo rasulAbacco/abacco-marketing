@@ -153,7 +153,7 @@ async function resumeWithRetry(retries = 5) {
   // 🔁 Also try resume every 2 min (extra safety)
   setInterval(async () => {
     await resumeSendingCampaigns();
-  }, 120000);
+  }, 300000 );
 
   startCampaignScheduler();
 })();
