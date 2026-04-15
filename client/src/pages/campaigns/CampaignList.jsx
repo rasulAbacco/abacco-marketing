@@ -168,7 +168,7 @@ const CampaignProgress = ({ campaignId }) => {
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-100 text-purple-700 text-xs font-semibold border border-purple-200">
                     <Clock size={12} />
                     {r.processing > 0
-                        ? `Sending (rate limited) • ETA ${r.eta}`
+                        ? `Sending  • ETA ${r.eta}`
                         : `Completed`}
                   </span>
                 </td>

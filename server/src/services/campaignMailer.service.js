@@ -508,62 +508,61 @@ async function runBatch(batch, ctx) {
   const chunks = chunkArray(batch, CONCURRENCY);
 
   for (const group of chunks) {
-    await Promise.all(
-      group.map(async (recipient) => {
-        const assignment = assignmentMap.get(recipient.id);
+    for (const recipient of group) {
+  const assignment = assignmentMap.get(recipient.id);
 
-        if (!assignment) {
-          console.warn(`⚠️ No assignment for recipient ${recipient.id} — skipping`);
-          await prisma.campaignRecipient.update({
-            where: { id: recipient.id },
-            data: { status: "failed", error: "No assignment found" },
-          }).catch(() => {});
-          return;
-        }
+  if (!assignment) {
+    await prisma.campaignRecipient.update({
+      where: { id: recipient.id },
+      data: { status: "failed", error: "No assignment found" },
+    }).catch(() => {});
+    continue;
+  }
 
-        try {
-          if (campaign.sendType === "followup") {
-            // FIX: was calling sendOneNormal for follow-ups — now correctly routes
-            await sendOneFollowup({
-              recipient,
-              account,
-              transporter,
-              fromEmail,
-              campaign,
-              assignment,
-              originalCampaignId,
-            });
-          } else {
-            await sendOneNormal({
-              recipient,
-              account,
-              transporter,
-              fromEmail,
-              campaign,
-              assignment,
-              smtpIp,
-            });
-          }
+  try {
+    if (campaign.sendType === "followup") {
+      await sendOneFollowup({
+        recipient,
+        account,
+        transporter,
+        fromEmail,
+        campaign,
+        assignment,
+        originalCampaignId,
+      });
+    } else {
+      await sendOneNormal({
+        recipient,
+        account,
+        transporter,
+        fromEmail,
+        campaign,
+        assignment,
+        smtpIp,
+      });
+    }
 
-          console.log(`✅ Sent → ${recipient.email} (account: ${account.email})`);
+    console.log(`✅ Sent → ${recipient.email}`);
 
-        } catch (err) {
-          console.error(`❌ Failed → ${recipient.email} (account: ${account.email}):`, err.message);
-
-          // Mark failed in DB (sendOneNormal/sendOneFollowup may not have reached the update)
-          await prisma.campaignRecipient.update({
-            where: { id: recipient.id },
-            data: {
-              status: "failed",
-              error:  err.message?.slice(0, 500) || "Unknown error",
-            },
-          }).catch(dbErr => console.error("❌ DB update failed:", dbErr.message));
-        }
-      })
-    );
+    // 🔥 CONTROLLED DELAY HERE
     await sleep(ctx.delayPerEmail);
+
+  } catch (err) {
+    console.error(`❌ Failed → ${recipient.email}:`, err.message);
+
+    await prisma.campaignRecipient.update({
+      where: { id: recipient.id },
+      data: {
+        status: "failed",
+        error: err.message?.slice(0, 500) || "Unknown error",
+      },
+    }).catch(() => {});
   }
 }
+   
+  }
+}
+
 
 
 function calculateDynamicDelay({ remainingEmails, estimatedCompletion, limit }) {
@@ -580,6 +579,26 @@ function calculateDynamicDelay({ remainingEmails, estimatedCompletion, limit }) 
   const finalRate = Math.min(requiredPerSecond, maxPerSecond);
 
   return Math.max(200, 1000 / finalRate); // min 200ms
+}
+
+function getControlledDelay({ limit, remainingEmails, estimatedCompletion }) {
+  // base delay from limit (STRICT CONTROL)
+  const baseDelay = (60 * 60 * 1000) / limit;
+
+  // dynamic boost (if behind schedule)
+  if (estimatedCompletion) {
+    const remainingTimeMs =
+      new Date(estimatedCompletion).getTime() - Date.now();
+
+    if (remainingTimeMs > 0 && remainingEmails > 0) {
+      const requiredDelay = remainingTimeMs / remainingEmails;
+
+      // choose faster of two (but not too fast)
+      return Math.max(200, Math.min(baseDelay, requiredDelay));
+    }
+  }
+
+  return baseDelay;
 }
 /**
  * Process all pending recipients for one account in batched loops.
@@ -620,11 +639,11 @@ async function processAccountBatched({
     },
   });
 
-  const dynamicDelay = calculateDynamicDelay({
-    remainingEmails,
-    estimatedCompletion: campaign.estimatedCompletion,
-    limit,
-  });
+  // const dynamicDelay = calculateDynamicDelay({
+  //   remainingEmails,
+  //   estimatedCompletion: campaign.estimatedCompletion,
+  //   limit,
+  // });
   // If no estimated completion, fallback to normal
   let dynamicLimit = limit;
 
@@ -659,404 +678,418 @@ async function processAccountBatched({
     campaign,
     assignmentMap,
     originalCampaignId,
-    delayPerEmail: dynamicDelay,
+    delayPerEmail: 1000,
   };
 
-  // ── Batch loop ─────────────────────────────────────────────────────────
-  while (true) {
+    // ── Batch loop ─────────────────────────────────────────────────────────
+    while (true) {
 
-    // [A] Campaign stop check
-    const latestCampaign = await prisma.campaign.findUnique({
-      where:  { id: campaignId },
-      select: { status: true },
-    });
-    if (!latestCampaign || latestCampaign.status !== "sending") {
-      console.log(`⏹ Campaign ${campaignId} stopped — halting account ${account.email}`);
-      return;
+      const remainingEmails = await prisma.campaignRecipient.count({
+          where: {
+            campaignId,
+            accountId: Number(accountId),
+            status: "pending",
+          },
+        });
+
+        const delay = getControlledDelay({
+          limit, // user selected (30/hr, 50/hr)
+          remainingEmails,
+          estimatedCompletion: campaign.estimatedCompletion,
+        });
+        ctx.delayPerEmail = delay;
+      // [A] Campaign stop check
+      const latestCampaign = await prisma.campaign.findUnique({
+        where:  { id: campaignId },
+        select: { status: true },
+      });
+      if (!latestCampaign || latestCampaign.status !== "sending") {
+        console.log(`⏹ Campaign ${campaignId} stopped — halting account ${account.email}`);
+        return;
+      }
+
+      // [B] Global daily-limit check
+      const dailyCount = await getDailyCount(userId);
+      if (dailyCount >= DAILY_LIMIT) {
+        const waitMs  = msUntilNextWindow();
+        const waitMin = Math.ceil(waitMs / 60000);
+        console.log(`🚫 Daily limit reached. Sleeping ${waitMin} min until reset...`);
+        await sleep(waitMs);
+        console.log(`🔄 Resuming campaign ${campaignId} after daily reset...`);
+        continue;
+      }
+
+      // [C] Fetch next batch — only "pending" rows for this account
+      const batch = await prisma.campaignRecipient.findMany({
+        where: {
+          campaignId,
+          accountId: Number(accountId),
+          status:    "pending",
+        },
+        orderBy: { id: "asc" },
+        take:    BATCH_SIZE,
+      });
+
+      // FIX: was `continue` here causing infinite loop — now we BREAK
+      if (batch.length === 0) {
+        console.log(`✅ Account ${account.email}: no more pending recipients — done`);
+        break;
+      }
+
+      console.log(`📦 Account ${account.email}: batch of ${batch.length} recipients`);
+
+      // [D] Lock batch → "processing" atomically before sending
+      //     Only update rows still "pending" to prevent double-processing
+      await prisma.campaignRecipient.updateMany({
+        where: {
+          id:     { in: batch.map(r => r.id) },
+          status: "pending", // guard: skip any that were grabbed by another worker
+        },
+        data: {
+          status:    "processing",
+          updatedAt: new Date(),
+        },
+      });
+
+      // [E] Send batch in parallel (CONCURRENCY emails at a time)
+      await runBatch(batch, ctx);
+
+      // [F] Small inter-batch delay to avoid SMTP rate limits
+      await sleep(300);
     }
-
-    // [B] Global daily-limit check
-    const dailyCount = await getDailyCount(userId);
-    if (dailyCount >= DAILY_LIMIT) {
-      const waitMs  = msUntilNextWindow();
-      const waitMin = Math.ceil(waitMs / 60000);
-      console.log(`🚫 Daily limit reached. Sleeping ${waitMin} min until reset...`);
-      await sleep(waitMs);
-      console.log(`🔄 Resuming campaign ${campaignId} after daily reset...`);
-      continue;
-    }
-
-    // [C] Fetch next batch — only "pending" rows for this account
-    const batch = await prisma.campaignRecipient.findMany({
-      where: {
-        campaignId,
-        accountId: Number(accountId),
-        status:    "pending",
-      },
-      orderBy: { id: "asc" },
-      take:    BATCH_SIZE,
-    });
-
-    // FIX: was `continue` here causing infinite loop — now we BREAK
-    if (batch.length === 0) {
-      console.log(`✅ Account ${account.email}: no more pending recipients — done`);
-      break;
-    }
-
-    console.log(`📦 Account ${account.email}: batch of ${batch.length} recipients`);
-
-    // [D] Lock batch → "processing" atomically before sending
-    //     Only update rows still "pending" to prevent double-processing
-    await prisma.campaignRecipient.updateMany({
-      where: {
-        id:     { in: batch.map(r => r.id) },
-        status: "pending", // guard: skip any that were grabbed by another worker
-      },
-      data: {
-        status:    "processing",
-        updatedAt: new Date(),
-      },
-    });
-
-    // [E] Send batch in parallel (CONCURRENCY emails at a time)
-    await runBatch(batch, ctx);
-
-    // [F] Small inter-batch delay to avoid SMTP rate limits
-    await sleep(300);
   }
-}
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SECTION 5 — sendOneNormal
 ═══════════════════════════════════════════════════════════════════════════ */
 
-async function sendOneNormal({
-  recipient,
-  account,
-  transporter,
-  fromEmail,
-  campaign,
-  assignment,
-  smtpIp,
-}) {
-  const { subject: rawSubject, pitchBody: rawBody } = assignment;
+  async function sendOneNormal({
+    recipient,
+    account,
+    transporter,
+    fromEmail,
+    campaign,
+    assignment,
+    smtpIp,
+  }) {
+    const { subject: rawSubject, pitchBody: rawBody } = assignment;
 
-  const label   = getDomainLabel(recipient.email);
-  const subject = `${label} - ${rawSubject}`;
+    const label   = getDomainLabel(recipient.email);
+    const subject = `${label} - ${rawSubject}`;
 
-  let body = normalizeHtmlForEmail(rawBody);
-  const baseStyles = extractBaseStyles(body);
+    let body = normalizeHtmlForEmail(rawBody);
+    const baseStyles = extractBaseStyles(body);
 
-  const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
-  if (!baseStyles.color || unsafeColors.includes(baseStyles.color.toLowerCase())) {
-    baseStyles.color = "#000000";
-  }
+    const unsafeColors = ["#fff", "#ffffff", "white", "transparent"];
+    if (!baseStyles.color || unsafeColors.includes(baseStyles.color.toLowerCase())) {
+      baseStyles.color = "#000000";
+    }
 
-  const signature = buildSignature(account, campaign.senderRole, baseStyles);
+    const signature = buildSignature(account, campaign.senderRole, baseStyles);
 
-  if (!body.includes("color:") && baseStyles.color !== "#000000") {
-    body = `<span style="color:${baseStyles.color};">${body}</span>`;
-  }
+    if (!body.includes("color:") && baseStyles.color !== "#000000") {
+      body = `<span style="color:${baseStyles.color};">${body}</span>`;
+    }
 
-  const html = buildNormalEmailHtml(body, signature, baseStyles);
+    const html = buildNormalEmailHtml(body, signature, baseStyles);
 
-  await Promise.race([
-    sendWithRetry(() =>
-      transporter.sendMail({
-        from: account.senderName
-          ? `"${account.senderName}" <${fromEmail}>`
-          : fromEmail,
-        to:      recipient.email,
-        subject,
-        html,
-      })
-    ),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Hard Timeout")), 20000)
-    ),
-  ]);
+    await Promise.race([
+      sendWithRetry(() =>
+        transporter.sendMail({
+          from: account.senderName
+            ? `"${account.senderName}" <${fromEmail}>`
+            : fromEmail,
+          to:      recipient.email,
+          subject,
+          html,
+        })
+      ),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Hard Timeout")), 20000)
+      ),
+    ]);
 
-  await prisma.conversation.upsert({
-    where:  { id: `${account.id}_sent_${recipient.email}` },
-    update: {
-      lastMessageAt: new Date(),
-      messageCount:  { increment: 1 },
-    },
-    create: {
-      id:             `${account.id}_sent_${recipient.email}`,
-      emailAccountId: account.id,
-      subject:        rawSubject || subject,
-      participants:   `${fromEmail}, ${recipient.email}`,
-      toRecipients:   recipient.email,
-      initiatorEmail: fromEmail,
-      lastMessageAt:  new Date(),
-      messageCount:   1,
-      unreadCount:    0,
-    },
-  });
-
-  try {
-    const newMessageId = `sent-${Date.now()}-${recipient.email}`;
-    await prisma.emailMessage.create({
-      data: {
+    await prisma.conversation.upsert({
+      where:  { id: `${account.id}_sent_${recipient.email}` },
+      update: {
+        lastMessageAt: new Date(),
+        messageCount:  { increment: 1 },
+      },
+      create: {
+        id:             `${account.id}_sent_${recipient.email}`,
         emailAccountId: account.id,
-        messageId:      newMessageId,
-        conversationId: `${account.id}_sent_${recipient.email}`,
-        subject,
-        fromEmail,
-        fromName:  account.senderName || null,
-        toEmail:   recipient.email,
-        body:      html,
-        direction: "sent",
-        folder:    "sent",
-        sentAt:    new Date(),
-        isRead:    true,
+        subject:        rawSubject || subject,
+        participants:   `${fromEmail}, ${recipient.email}`,
+        toRecipients:   recipient.email,
+        initiatorEmail: fromEmail,
+        lastMessageAt:  new Date(),
+        messageCount:   1,
+        unreadCount:    0,
       },
     });
-  } catch (e) {
-    console.error("⚠️ Email log failed (ignored):", e.message);
-  }
 
-  await prisma.campaignRecipient.update({
-    where: { id: recipient.id },
-    data: {
-      status:        "sent",
-      sentAt:        new Date(),
-      accountId:     account.id,
-      sentBodyHtml:  html,
-      sentSubject:   rawSubject,
-      sentFromEmail: fromEmail,
-      sendingIp:     smtpIp,
-    },
-  });
+    try {
+      const newMessageId = `sent-${Date.now()}-${recipient.email}`;
+      await prisma.emailMessage.create({
+        data: {
+          emailAccountId: account.id,
+          messageId:      newMessageId,
+          conversationId: `${account.id}_sent_${recipient.email}`,
+          subject,
+          fromEmail,
+          fromName:  account.senderName || null,
+          toEmail:   recipient.email,
+          body:      html,
+          direction: "sent",
+          folder:    "sent",
+          sentAt:    new Date(),
+          isRead:    true,
+        },
+      });
+    } catch (e) {
+      console.error("⚠️ Email log failed (ignored):", e.message);
+    }
 
-  await prisma.dailyEmailLog.upsert({
-    where: {
-      userId_sentAt: {
-        userId: campaign.userId,
-        sentAt: getTodayStart(),
+    await prisma.campaignRecipient.update({
+      where: { id: recipient.id },
+      data: {
+        status:        "sent",
+        sentAt:        new Date(),
+        accountId:     account.id,
+        sentBodyHtml:  html,
+        sentSubject:   rawSubject,
+        sentFromEmail: fromEmail,
+        sendingIp:     smtpIp,
       },
-    },
-    update: { count: { increment: 1 } },
-    create: {
-      userId:   campaign.userId,
-      userName: campaign.user?.name  || "Unknown",
-      empId:    campaign.user?.empId || "N/A",
-      count:    1,
-      sentAt:   getTodayStart(),
-    },
-  });
-}
+    });
+
+    await prisma.dailyEmailLog.upsert({
+      where: {
+        userId_sentAt: {
+          userId: campaign.userId,
+          sentAt: getTodayStart(),
+        },
+      },
+      update: { count: { increment: 1 } },
+      create: {
+        userId:   campaign.userId,
+        userName: campaign.user?.name  || "Unknown",
+        empId:    campaign.user?.empId || "N/A",
+        count:    1,
+        sentAt:   getTodayStart(),
+      },
+    });
+  }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SECTION 6 — sendOneFollowup
 ═══════════════════════════════════════════════════════════════════════════ */
 
-async function sendOneFollowup({
-  recipient,
-  account,
-  transporter,
-  fromEmail,
-  campaign,
-  assignment,
-  originalCampaignId,
-}) {
-  const { subject: fallbackSubject, pitchBody: rawFollowupBody } = assignment;
+  async function sendOneFollowup({
+    recipient,
+    account,
+    transporter,
+    fromEmail,
+    campaign,
+    assignment,
+    originalCampaignId,
+  }) {
+    const { subject: fallbackSubject, pitchBody: rawFollowupBody } = assignment;
 
-  const followupBody = normalizeHtmlForEmail(rawFollowupBody);
-  if (!followupBody || followupBody.trim() === "") {
-    throw new Error("Follow-up body is empty");
-  }
+    const followupBody = normalizeHtmlForEmail(rawFollowupBody);
+    if (!followupBody || followupBody.trim() === "") {
+      throw new Error("Follow-up body is empty");
+    }
 
-  const baseStyles            = extractBaseStyles(followupBody);
-  const signature             = buildSignature(account, campaign.senderRole, baseStyles);
-  const followupWithSignature = followupBody + signature;
+    const baseStyles            = extractBaseStyles(followupBody);
+    const signature             = buildSignature(account, campaign.senderRole, baseStyles);
+    const followupWithSignature = followupBody + signature;
 
-  let prevEmail = null;
-  if (originalCampaignId) {
-    prevEmail = await prisma.campaignRecipient.findFirst({
+    let prevEmail = null;
+    if (originalCampaignId) {
+      prevEmail = await prisma.campaignRecipient.findFirst({
+        where: {
+          campaignId: originalCampaignId,
+          email:      recipient.email,
+          status:     "sent",
+        },
+        select: {
+          sentBodyHtml:  true,
+          sentSubject:   true,
+          sentFromEmail: true,
+          sentAt:        true,
+        },
+      });
+    }
+
+    if (!prevEmail) {
+      console.warn(`❌ No original email record: ${recipient.email}`);
+      await prisma.campaignRecipient.update({
+        where: { id: recipient.id },
+        data:  { status: "failed", error: "No original email found" },
+      });
+      return;
+    }
+
+    let originalBody = extractBodyContent(prevEmail.sentBodyHtml);
+
+    if (!originalBody) {
+      console.warn(`⚠️ extractBodyContent empty for ${recipient.email} — using raw fallback`);
+      originalBody = prevEmail.sentBodyHtml
+        .replace(/<!DOCTYPE[^>]*>/gi, "")
+        .replace(/<html[^>]*>/gi, "").replace(/<\/html>/gi, "")
+        .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
+        .replace(/<body[^>]*>/gi, "").replace(/<\/body>/gi, "")
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, "")
+        .trim();
+    }
+
+    console.log(
+      `📨 originalBody for ${recipient.email}: ${
+        originalBody ? originalBody.length + " chars extracted" : "EMPTY"
+      }`
+    );
+
+    const originalSubject = prevEmail.sentSubject  || fallbackSubject || "";
+    const originalFrom    = prevEmail.sentFromEmail || fromEmail;
+    const sentAt          = new Date(prevEmail.sentAt || Date.now()).toLocaleString();
+
+    const threadedHtml = buildFollowupHtml({
+      followUpBody: followupWithSignature,
+      originalBody,
+      from:      originalFrom,
+      to:        recipient.email,
+      sentAt,
+      subject:   originalSubject,
+      baseColor: baseStyles.color || "#000",
+    });
+
+    const html = `<html>
+      <body style="font-family:Calibri,sans-serif">
+        ${threadedHtml}
+      </body>
+    </html>`;
+
+    const subject = originalSubject ? `Re: ${originalSubject}` : `Re: ${fallbackSubject}`;
+
+    prevEmail.sentBodyHtml = null; // free memory
+
+    const originalAccountRef = await prisma.campaignRecipient.findFirst({
       where: {
         campaignId: originalCampaignId,
         email:      recipient.email,
         status:     "sent",
       },
-      select: {
-        sentBodyHtml:  true,
-        sentSubject:   true,
-        sentFromEmail: true,
-        sentAt:        true,
-      },
+      select: { accountId: true },
     });
-  }
 
-  if (!prevEmail) {
-    console.warn(`❌ No original email record: ${recipient.email}`);
+    const accountToUse  = originalAccountRef?.accountId || account.id;
+    const actualAccount = await prisma.emailAccount.findUnique({
+      where: { id: accountToUse },
+    });
+
+    if (!actualAccount || !actualAccount.smtpHost) {
+      console.error(`❌ Follow-up skipped (account ${accountToUse} not found): ${recipient.email}`);
+      await prisma.campaignRecipient.update({
+        where: { id: recipient.id },
+        data:  { status: "failed", error: `SMTP account ${accountToUse} not found` },
+      });
+      return;
+    }
+
+    const actualPassword    = decryptPassword(actualAccount);
+    const actualTransporter = createTransporter(actualAccount, actualPassword);
+    const actualFromEmail   = actualAccount.smtpUser || actualAccount.email;
+
+    const prevEmailMsg = await prisma.emailMessage.findFirst({
+      where:   { emailAccountId: actualAccount.id, toEmail: recipient.email },
+      orderBy: { sentAt: "asc" },
+      select:  { messageId: true },
+    });
+
+    const threadingHeaders = prevEmailMsg?.messageId
+      ? { "In-Reply-To": prevEmailMsg.messageId, References: prevEmailMsg.messageId }
+      : {};
+
+    try {
+      await sendWithRetry(() =>
+        actualTransporter.sendMail({
+          from: actualAccount.senderName
+            ? `"${actualAccount.senderName}" <${actualFromEmail}>`
+            : actualFromEmail,
+          to:      recipient.email,
+          subject,
+          html,
+          headers: threadingHeaders,
+        })
+      );
+    } catch (err) {
+      console.error("❌ FOLLOW-UP SEND ERROR:", {
+        email:    recipient.email,
+        account:  actualAccount.email,
+        error:    err.message,
+        code:     err.code,
+        response: err.response,
+      });
+      throw err;
+    }
+
+    try {
+      const newMessageId = `sent-${Date.now()}-${recipient.email}`;
+      await prisma.emailMessage.create({
+        data: {
+          emailAccountId: actualAccount.id,
+          messageId:      newMessageId,
+          conversationId: `${actualAccount.id}_sent_${recipient.email}`,
+          subject,
+          fromEmail:      actualFromEmail,
+          fromName:       actualAccount.senderName || null,
+          toEmail:        recipient.email,
+          body:           html,
+          direction:      "sent",
+          folder:         "sent",
+          sentAt:         new Date(),
+          isRead:         true,
+        },
+      });
+    } catch (e) {
+      console.error("⚠️ Email log failed (ignored):", e.message);
+    }
+
+    const smtpIp = await getSmtpIp(actualAccount.smtpHost);
+
     await prisma.campaignRecipient.update({
       where: { id: recipient.id },
-      data:  { status: "failed", error: "No original email found" },
-    });
-    return;
-  }
-
-  let originalBody = extractBodyContent(prevEmail.sentBodyHtml);
-
-  if (!originalBody) {
-    console.warn(`⚠️ extractBodyContent empty for ${recipient.email} — using raw fallback`);
-    originalBody = prevEmail.sentBodyHtml
-      .replace(/<!DOCTYPE[^>]*>/gi, "")
-      .replace(/<html[^>]*>/gi, "").replace(/<\/html>/gi, "")
-      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
-      .replace(/<body[^>]*>/gi, "").replace(/<\/body>/gi, "")
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-      .replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, "")
-      .trim();
-  }
-
-  console.log(
-    `📨 originalBody for ${recipient.email}: ${
-      originalBody ? originalBody.length + " chars extracted" : "EMPTY"
-    }`
-  );
-
-  const originalSubject = prevEmail.sentSubject  || fallbackSubject || "";
-  const originalFrom    = prevEmail.sentFromEmail || fromEmail;
-  const sentAt          = new Date(prevEmail.sentAt || Date.now()).toLocaleString();
-
-  const threadedHtml = buildFollowupHtml({
-    followUpBody: followupWithSignature,
-    originalBody,
-    from:      originalFrom,
-    to:        recipient.email,
-    sentAt,
-    subject:   originalSubject,
-    baseColor: baseStyles.color || "#000",
-  });
-
-  const html = `<html>
-    <body style="font-family:Calibri,sans-serif">
-      ${threadedHtml}
-    </body>
-  </html>`;
-
-  const subject = originalSubject ? `Re: ${originalSubject}` : `Re: ${fallbackSubject}`;
-
-  prevEmail.sentBodyHtml = null; // free memory
-
-  const originalAccountRef = await prisma.campaignRecipient.findFirst({
-    where: {
-      campaignId: originalCampaignId,
-      email:      recipient.email,
-      status:     "sent",
-    },
-    select: { accountId: true },
-  });
-
-  const accountToUse  = originalAccountRef?.accountId || account.id;
-  const actualAccount = await prisma.emailAccount.findUnique({
-    where: { id: accountToUse },
-  });
-
-  if (!actualAccount || !actualAccount.smtpHost) {
-    console.error(`❌ Follow-up skipped (account ${accountToUse} not found): ${recipient.email}`);
-    await prisma.campaignRecipient.update({
-      where: { id: recipient.id },
-      data:  { status: "failed", error: `SMTP account ${accountToUse} not found` },
-    });
-    return;
-  }
-
-  const actualPassword    = decryptPassword(actualAccount);
-  const actualTransporter = createTransporter(actualAccount, actualPassword);
-  const actualFromEmail   = actualAccount.smtpUser || actualAccount.email;
-
-  const prevEmailMsg = await prisma.emailMessage.findFirst({
-    where:   { emailAccountId: actualAccount.id, toEmail: recipient.email },
-    orderBy: { sentAt: "asc" },
-    select:  { messageId: true },
-  });
-
-  const threadingHeaders = prevEmailMsg?.messageId
-    ? { "In-Reply-To": prevEmailMsg.messageId, References: prevEmailMsg.messageId }
-    : {};
-
-  try {
-    await sendWithRetry(() =>
-      actualTransporter.sendMail({
-        from: actualAccount.senderName
-          ? `"${actualAccount.senderName}" <${actualFromEmail}>`
-          : actualFromEmail,
-        to:      recipient.email,
-        subject,
-        html,
-        headers: threadingHeaders,
-      })
-    );
-  } catch (err) {
-    console.error("❌ FOLLOW-UP SEND ERROR:", {
-      email:    recipient.email,
-      account:  actualAccount.email,
-      error:    err.message,
-      code:     err.code,
-      response: err.response,
-    });
-    throw err;
-  }
-
-  try {
-    const newMessageId = `sent-${Date.now()}-${recipient.email}`;
-    await prisma.emailMessage.create({
       data: {
-        emailAccountId: actualAccount.id,
-        messageId:      newMessageId,
-        conversationId: `${actualAccount.id}_sent_${recipient.email}`,
-        subject,
-        fromEmail:      actualFromEmail,
-        fromName:       actualAccount.senderName || null,
-        toEmail:        recipient.email,
-        body:           html,
-        direction:      "sent",
-        folder:         "sent",
-        sentAt:         new Date(),
-        isRead:         true,
+        status:        "sent",
+        sentAt:        new Date(),
+        sentBodyHtml:  html,
+        sentSubject:   prevEmail?.sentSubject ?? fallbackSubject,
+        sentFromEmail: actualFromEmail,
+        sendingIp:     smtpIp,
       },
     });
-  } catch (e) {
-    console.error("⚠️ Email log failed (ignored):", e.message);
-  }
 
-  const smtpIp = await getSmtpIp(actualAccount.smtpHost);
-
-  await prisma.campaignRecipient.update({
-    where: { id: recipient.id },
-    data: {
-      status:        "sent",
-      sentAt:        new Date(),
-      sentBodyHtml:  html,
-      sentSubject:   prevEmail?.sentSubject ?? fallbackSubject,
-      sentFromEmail: actualFromEmail,
-      sendingIp:     smtpIp,
-    },
-  });
-
-  await prisma.dailyEmailLog.upsert({
-    where: {
-      userId_sentAt: {
-        userId: campaign.userId,
-        sentAt: getTodayStart(),
+    await prisma.dailyEmailLog.upsert({
+      where: {
+        userId_sentAt: {
+          userId: campaign.userId,
+          sentAt: getTodayStart(),
+        },
       },
-    },
-    update: { count: { increment: 1 } },
-    create: {
-      userId:   campaign.userId,
-      userName: campaign.user?.name  || "Unknown",
-      empId:    campaign.user?.empId || "N/A",
-      count:    1,
-      sentAt:   getTodayStart(),
-    },
-  });
-}
+      update: { count: { increment: 1 } },
+      create: {
+        userId:   campaign.userId,
+        userName: campaign.user?.name  || "Unknown",
+        empId:    campaign.user?.empId || "N/A",
+        count:    1,
+        sentAt:   getTodayStart(),
+      },
+    });
+  }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
