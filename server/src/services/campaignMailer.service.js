@@ -565,6 +565,22 @@ async function runBatch(batch, ctx) {
   }
 }
 
+
+function calculateDynamicDelay({ remainingEmails, estimatedCompletion, limit }) {
+  if (!estimatedCompletion) return 1000;
+
+  const remainingTimeMs = new Date(estimatedCompletion).getTime() - Date.now();
+
+  if (remainingTimeMs <= 0 || remainingEmails <= 0) return 500;
+
+  const requiredPerSecond = remainingEmails / (remainingTimeMs / 1000);
+
+  const maxPerSecond = limit / 3600;
+
+  const finalRate = Math.min(requiredPerSecond, maxPerSecond);
+
+  return Math.max(200, 1000 / finalRate); // min 200ms
+}
 /**
  * Process all pending recipients for one account in batched loops.
  *
@@ -593,7 +609,44 @@ async function processAccountBatched({
   const transporter = createTransporter(account, password);
   const smtpIp      = await getSmtpIp(account.smtpHost);
   const limit       = getLimit(account.provider, account.id, customLimits);
-  const delayPerEmail = (60 * 60 * 1000) / (limit / CONCURRENCY);
+
+  // 🔥 DYNAMIC RATE CONTROL (NEW)
+
+  const remainingEmails = await prisma.campaignRecipient.count({
+    where: {
+      campaignId,
+      accountId: Number(accountId),
+      status: "pending",
+    },
+  });
+
+  const dynamicDelay = calculateDynamicDelay({
+    remainingEmails,
+    estimatedCompletion: campaign.estimatedCompletion,
+    limit,
+  });
+  // If no estimated completion, fallback to normal
+  let dynamicLimit = limit;
+
+  if (campaign.estimatedCompletion) {
+    const remainingTimeMs =
+      new Date(campaign.estimatedCompletion).getTime() - Date.now();
+
+    if (remainingTimeMs > 0 && remainingEmails > 0) {
+      const requiredPerHour = Math.ceil(
+        (remainingEmails / remainingTimeMs) * 3600000
+      );
+
+      // Do not exceed provider safe limit
+      dynamicLimit = Math.min(requiredPerHour, limit);
+
+      console.log(
+        `⚡ Dynamic rate for ${account.email}: ${dynamicLimit}/hr (needed: ${requiredPerHour})`
+      );
+    }
+  }
+
+ 
   console.log(`📤 Account ${account.email}: starting (limit=${limit}/hr, concurrency=${CONCURRENCY})`);
   console.log(`📡 SMTP: ${account.smtpHost} → ${smtpIp}`);
 
@@ -606,7 +659,7 @@ async function processAccountBatched({
     campaign,
     assignmentMap,
     originalCampaignId,
-    delayPerEmail,
+    delayPerEmail: dynamicDelay,
   };
 
   // ── Batch loop ─────────────────────────────────────────────────────────
@@ -669,7 +722,7 @@ async function processAccountBatched({
     await runBatch(batch, ctx);
 
     // [F] Small inter-batch delay to avoid SMTP rate limits
-    await sleep(1500);
+    await sleep(300);
   }
 }
 
