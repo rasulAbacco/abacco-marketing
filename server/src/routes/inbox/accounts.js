@@ -426,78 +426,63 @@ router.delete("/:id", protect, async (req, res) => {
   console.log(`🟡 Starting delete for account ${id}`);
 
   try {
-    // 1️⃣ Check account exists
-    const existing = await prisma.emailAccount.findUnique({ where: { id } });
+    // 1️⃣ Check account exists and belongs to this user
+    const existing = await prisma.emailAccount.findFirst({
+      where: { id, userId: req.user.id },
+    });
 
     if (!existing) {
-      console.log("⚠️ Account already deleted.");
+      console.log("⚠️ Account not found or already deleted.");
       return res.json({ success: true, message: "Account already deleted" });
     }
 
-    // 2️⃣ Disable credentials first
-    await prisma.emailAccount.update({
-      where: { id },
-      data: {
-        imapHost: null,
-        imapUser: null,
-        encryptedPass: null,
-        verified: false,
-      },
+    // 2️⃣ Cleanup related data WITHOUT transaction (avoids timeout on large inboxes)
+
+    // ---- Messages ----
+    const messages = await prisma.emailMessage.findMany({
+      where: { emailAccountId: id },
+      select: { id: true },
     });
+    const messageIds = messages.map((m) => m.id);
 
-    // 3️⃣ Transaction cleanup
-// 3️⃣ Cleanup WITHOUT transaction (fix timeout issue)
+    if (messageIds.length > 0) {
+      await prisma.attachment.deleteMany({
+        where: { emailMessageId: { in: messageIds } },
+      });
+      await prisma.messageTag.deleteMany({
+        where: { messageId: { in: messageIds } },
+      });
+    }
 
-// ---- Messages ----
-const messages = await prisma.emailMessage.findMany({
-  where: { emailAccountId: id },
-  select: { id: true },
-});
+    await prisma.emailMessage.deleteMany({ where: { emailAccountId: id } });
 
-const messageIds = messages.map((m) => m.id);
+    // ---- Conversations ----
+    const conversations = await prisma.conversation.findMany({
+      where: { emailAccountId: id },
+      select: { id: true },
+    });
+    const conversationIds = conversations.map((c) => c.id);
 
-if (messageIds.length > 0) {
-  await prisma.attachment.deleteMany({
-    where: { emailMessageId: { in: messageIds } },
-  });
+    if (conversationIds.length > 0) {
+      await prisma.conversationTag.deleteMany({
+        where: { conversationId: { in: conversationIds } },
+      });
+      await prisma.scheduledMessage.deleteMany({
+        where: { conversationId: { in: conversationIds } },
+      });
+    }
 
-  await prisma.messageTag.deleteMany({
-    where: { messageId: { in: messageIds } },
-  });
-}
+    await prisma.conversation.deleteMany({ where: { emailAccountId: id } });
 
-await prisma.emailMessage.deleteMany({
-  where: { emailAccountId: id },
-});
+    // ---- Other account data ----
+    await prisma.emailFolder.deleteMany({ where: { accountId: id } });
+    await prisma.syncState.deleteMany({ where: { accountId: id } });
 
-// ---- Conversations ----
-const conversations = await prisma.conversation.findMany({
-  where: { emailAccountId: id },
-  select: { id: true },
-});
+    // ---- Final delete ----
+    await prisma.emailAccount.delete({ where: { id } });
 
-const conversationIds = conversations.map((c) => c.id);
-
-if (conversationIds.length > 0) {
-  await prisma.conversationTag.deleteMany({
-    where: { conversationId: { in: conversationIds } },
-  });
-
-  await prisma.scheduledMessage.deleteMany({
-    where: { conversationId: { in: conversationIds } },
-  });
-}
-
-await prisma.conversation.deleteMany({
-  where: { emailAccountId: id },
-});
-
-// ---- Other account data ----
-await prisma.emailFolder.deleteMany({ where: { accountId: id } });
-await prisma.syncState.deleteMany({ where: { accountId: id } });
-
-// ---- Final delete ----
-await prisma.emailAccount.delete({ where: { id } });
+    // ✅ CRITICAL: Clear cache so next GET /accounts reflects the deletion
+    cache.del(`accounts:${req.user.id}`);
 
     console.log("🟢 Account deleted successfully");
     res.json({ success: true, message: "Account deleted" });
@@ -505,6 +490,8 @@ await prisma.emailAccount.delete({ where: { id } });
     console.error("❌ Delete error:", err);
 
     if (err.code === "P2025") {
+      // Record already gone — treat as success and clear cache
+      cache.del(`accounts:${req.user.id}`);
       return res.json({ success: true, message: "Account already deleted" });
     }
 
@@ -573,7 +560,8 @@ router.get("/", protect, async (req, res) => {
     return res.json({ success: true, data: accounts });
 
   } catch (error) {
-    res.status(500).json({ success: false });
+    console.error("🔥 GET /accounts error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

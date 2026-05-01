@@ -144,38 +144,41 @@ export default function InboxMain() {
         ? response.data.data
         : [];
 
-      const accountsWithUnread = await Promise.all(
-        accountsData.map(async (account) => {
-          try {
-            const unreadRes = await api.get(
-              `${API_BASE_URL}/api/inbox/accounts/${account.id}/unread`
-            );
-            return {
-              ...account,
-              unreadCount: unreadRes.data?.data?.inboxUnread || 0,
-            };
-          } catch {
-            return { ...account, unreadCount: 0 };
-          }
-        })
-      );
+      if (accountsData.length === 0) {
+        setAccounts([]);
+        setLoadingAccounts(false);
+        return;
+      }
 
-      // Normalize all account groupIds to strings for consistent comparison
-      const normalizedAccounts = accountsWithUnread.map((a) => ({
+      // ── Single bulk request instead of N individual unread calls ──
+      // Previously: Promise.all with one HTTP call per account → 80 requests
+      // Now: one POST returns all counts in one DB groupBy query
+      let unreadMap = {};
+      try {
+        const bulkRes = await api.post(
+          `${API_BASE_URL}/api/inbox/accounts/unread-bulk`,
+          { accountIds: accountsData.map((a) => a.id) }
+        );
+        unreadMap = bulkRes.data?.data || {};
+      } catch {
+        // Fallback: zero counts — don't block the account list from loading
+      }
+
+      const normalizedAccounts = accountsData.map((a) => ({
         ...a,
         groupId: a.groupId ? String(a.groupId) : null,
+        unreadCount: unreadMap[a.id] || 0,
       }));
+
       setAccounts(normalizedAccounts);
 
       // Auto-select first account based on active group from URL
-      const activeGroupId = searchParams.get("groupId") ? String(searchParams.get("groupId")) : null;
+      const activeGroupId = searchParams.get("groupId")
+        ? String(searchParams.get("groupId"))
+        : null;
       if (activeGroupId) {
         const groupAccs = normalizedAccounts.filter((a) => a.groupId === activeGroupId);
-        if (groupAccs.length > 0) {
-          setSelectedAccount(groupAccs[0]);
-        } else if (normalizedAccounts.length > 0) {
-          setSelectedAccount(normalizedAccounts[0]);
-        }
+        setSelectedAccount(groupAccs[0] ?? normalizedAccounts[0] ?? null);
       } else if (!selectedAccount && normalizedAccounts.length > 0) {
         setSelectedAccount(normalizedAccounts[0]);
       }
@@ -187,28 +190,61 @@ export default function InboxMain() {
     }
   };
 
-  // ──────────────────────────────────────────────────────────
-  // POLLING
-  // ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedAccount?.id) return;
-    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-    pollingIntervalRef.current = setInterval(() => {
-      fetchConversations(true);
-    }, 15000);
-    return () => { if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current); };
-  }, [selectedAccount?.id, selectedFolder, monthFilter]);
+// ──────────────────────────────────────────────────────────
+// POLLING
+// ──────────────────────────────────────────────────────────
+useEffect(() => {
+  if (!selectedAccount?.id) return;
 
+  if (pollingIntervalRef.current) {
+    clearInterval(pollingIntervalRef.current);
+  }
+
+  pollingIntervalRef.current = setInterval(() => {
+    fetchConversations(true);
+  }, 15000);
+
+  return () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+  };
+}, [selectedAccount?.id]); // ✅ CLOSE properly
+
+// ── Polling: refresh conversations every 30s ─────────────
+useEffect(() => {
+  if (!selectedAccount?.id) return;
+
+  if (pollingIntervalRef.current) {
+    clearInterval(pollingIntervalRef.current);
+  }
+
+  pollingIntervalRef.current = setInterval(() => {
+    fetchConversations(true);
+  }, 30000);
+
+  return () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+  };
+}, [selectedAccount?.id, selectedFolder, monthFilter]);
+
+  // ── Fetch when account/folder/monthFilter changes ────────
   useEffect(() => {
     if (!selectedAccount?.id) return;
     fetchConversations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccount?.id, selectedFolder, monthFilter]);
 
+  // ── Fetch when view/filters/search changes ───────────────
   useEffect(() => {
     if (!selectedAccount) return;
     if (activeView === "today") { fetchTodayFollowUps(); return; }
     if (searchEmail?.trim()) fetchSearchResults();
-    else fetchConversations();
+    // Only re-fetch inbox when filters or search change — not on every render
+    else if (activeView === "inbox") fetchConversations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, filters, searchEmail]);
 
   // ──────────────────────────────────────────────────────────
@@ -257,7 +293,11 @@ export default function InboxMain() {
     if (!selectedAccount) return;
     try {
       setLoading(true);
-      const params = { folder: selectedFolder, monthFilter: monthFilter };
+      const params = {
+        folder: selectedFolder,
+        monthFilter: monthFilter,
+        ...(forceRefresh ? { bust: Date.now() } : {}), // breaks cache key server-side
+      };
       const res = await api.get(
         `${API_BASE_URL}/api/inbox/conversations/${selectedAccount.id}`,
         { params }
@@ -410,6 +450,18 @@ export default function InboxMain() {
 
   const handleMonthFilterChange = (value) => setMonthFilter(value);
 
+  const handleRefresh = async () => {
+    if (selectedAccount) {
+      try {
+        await api.get(`${API_BASE_URL}/api/accounts/sync/${selectedAccount.email}`);
+      } catch (e) {
+        // sync errors are non-fatal
+      }
+    }
+    setRefreshKey((prev) => prev + 1);
+    fetchConversations(true);
+  };
+
   // ──────────────────────────────────────────────────────────
   // RENDER
   // ──────────────────────────────────────────────────────────
@@ -450,7 +502,7 @@ export default function InboxMain() {
           onScheduleClick={handleSchedule}
           activeView={activeView}
           activeFilters={filters}
-          onRefresh={() => setRefreshKey((prev) => prev + 1)}
+          onRefresh={handleRefresh}
           monthFilter={monthFilter}
           onMonthFilterChange={handleMonthFilterChange}
         />

@@ -542,7 +542,7 @@ async function runBatch(batch, ctx) {
       });
     }
 
-    console.log(`✅ Sent → ${recipient.email}`);
+    // console.log(`✅ Sent → ${recipient.email}`);
 
     // 🔥 CONTROLLED DELAY HERE
     await sleep(ctx.delayPerEmail);
@@ -659,15 +659,13 @@ async function processAccountBatched({
       // Do not exceed provider safe limit
       dynamicLimit = Math.min(requiredPerHour, limit);
 
-      console.log(
-        `⚡ Dynamic rate for ${account.email}: ${dynamicLimit}/hr (needed: ${requiredPerHour})`
-      );
+      
     }
   }
 
  
-  console.log(`📤 Account ${account.email}: starting (limit=${limit}/hr, concurrency=${CONCURRENCY})`);
-  console.log(`📡 SMTP: ${account.smtpHost} → ${smtpIp}`);
+  // console.log(`📤 Account ${account.email}: starting (limit=${limit}/hr, concurrency=${CONCURRENCY})`);
+  // console.log(`📡 SMTP: ${account.smtpHost} → ${smtpIp}`);
 
   // Shared context passed to runBatch — avoids re-building per iteration
   const ctx = {
@@ -736,7 +734,7 @@ async function processAccountBatched({
         break;
       }
 
-      console.log(`📦 Account ${account.email}: batch of ${batch.length} recipients`);
+      // // console.log(`📦 Account ${account.email}: batch of ${batch.length} recipients`);
 
       // [D] Lock batch → "processing" atomically before sending
       //     Only update rows still "pending" to prevent double-processing

@@ -20,7 +20,6 @@ import {
   Trash,
 } from "lucide-react";
 import { api } from "../../utils/api";
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function ModernSidebar({
@@ -115,8 +114,18 @@ export default function ModernSidebar({
   };
 
   const toggleGroup = (groupId) => {
-    setExpandedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+    const isNowExpanded = !expandedGroups[groupId];
+    setExpandedGroups((prev) => ({ ...prev, [groupId]: isNowExpanded }));
     if (onGroupSelect) onGroupSelect(groupId);
+
+    // Auto-select the first account in this group when it expands
+    if (isNowExpanded) {
+      const groupAccs = accounts.filter((a) => String(a.groupId) === String(groupId));
+      if (groupAccs.length > 0 && onAccountSelect) {
+        onAccountSelect(groupAccs[0]);
+        setExpandedAccounts((prev) => ({ ...prev, [groupAccs[0].id]: true }));
+      }
+    }
   };
 
   const toggleAccount = (accountId) => {
@@ -154,12 +163,21 @@ export default function ModernSidebar({
 
   // ── Group CRUD ────────────────────────────────────────────────────────
   const handleDeleteGroup = async (groupId) => {
-    if (!window.confirm("Delete this group? Accounts inside will become ungrouped.")) return;
+    const group = accountGroups.find((g) => g.id === groupId);
+    const groupAccounts = accounts.filter((a) => String(a.groupId) === String(groupId));
+    const accountCount = groupAccounts.length;
+
+    const confirmMsg = accountCount > 0
+      ? `Delete "${group?.name}"?\n\nThis will permanently delete the group AND all ${accountCount} account(s) inside it, along with all their emails and data.\n\nThis cannot be undone.`
+      : `Delete "${group?.name}"? This group is empty and will be permanently removed.`;
+
+    if (!window.confirm(confirmMsg)) return;
     try {
       await api.delete(`${API_BASE_URL}/api/account-groups/${groupId}`);
       if (onGroupsChange) onGroupsChange();
     } catch (err) {
       console.error("Failed to delete group:", err);
+      alert("Failed to delete group. Please try again.");
     }
     setShowGroupMenu(null);
   };

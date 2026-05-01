@@ -153,13 +153,14 @@ model EmailMessage {
   sentAt    DateTime @default(now())
   createdAt DateTime @default(now())
 
-  account      EmailAccount  @relation(fields: [emailAccountId], references: [id])
+  // ✅ FIXED HERE
+  account EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+
   conversation Conversation? @relation(fields: [conversationId], references: [id])
 
   attachments Attachment[]
   MessageTag  MessageTag[]
 
-  // ✅ THIS is what enables findUnique({ emailAccountId_messageId })
   @@unique([emailAccountId, messageId])
   @@index([emailAccountId, conversationId])
   @@index([emailAccountId, sentAt])

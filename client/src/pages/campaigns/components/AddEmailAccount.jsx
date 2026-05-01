@@ -208,12 +208,8 @@ const logoutAccount = async () => {
   setLoading(true);
 
   try {
-    const token = localStorage.getItem("token");
-
-    // ✅ Only call the real backend route
-    await api.delete(`${API_BASE_URL}/api/accounts/${accountToLogout}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    // api utility already attaches the Authorization header — no need to add it manually
+    await api.delete(`${API_BASE_URL}/api/accounts/${accountToLogout}`);
 
     // Update UI immediately
     const updatedAccounts = accounts.filter((a) => a.id !== accountToLogout);

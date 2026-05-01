@@ -2,7 +2,6 @@
 import express from "express";
 import prisma from "../../prismaClient.js";
 import { protect } from "../../middlewares/authMiddleware.js";
-import { runSyncForAccount } from "../../services/imap.service.js";
 import cache from "../../utils/cache.js";
 
 // ─────────────────────────────────────────────
@@ -11,6 +10,7 @@ import cache from "../../utils/cache.js";
 // faster sentAt-range queries per account:
 //
 //   @@index([emailAccountId, sentAt])
+//   @@index([emailAccountId, folder, direction, sentAt])
 // ─────────────────────────────────────────────
 
 function extractNameOrEmail(value) {
@@ -74,8 +74,6 @@ router.get("/accounts/:id/unread", protect, async (req, res) => {
   try {
     const accountId = Number(req.params.id);
 
-    // Count only unread messages in the inbox folder (not spam/trash/sent)
-    // This ensures the sidebar badge reflects true inbox unread count only
     const count = await prisma.emailMessage.count({
       where: {
         emailAccountId: accountId,
@@ -89,6 +87,46 @@ router.get("/accounts/:id/unread", protect, async (req, res) => {
   } catch (err) {
     console.error("Unread error:", err);
     res.status(500).json({ success: false });
+  }
+});
+
+/* =========================================================
+   BULK UNREAD COUNTS (single DB query for all accounts)
+   POST /api/inbox/accounts/unread-bulk
+   Body: { accountIds: [1, 2, 3, ...] }
+
+   Replaces N individual /unread requests with 1 call.
+   This is the fix for the 5-10 min load time caused by
+   firing one HTTP request per account on page load.
+========================================================= */
+router.post("/accounts/unread-bulk", protect, async (req, res) => {
+  try {
+    const { accountIds } = req.body;
+    if (!Array.isArray(accountIds) || accountIds.length === 0) {
+      return res.json({ success: true, data: {} });
+    }
+
+    // Group by emailAccountId in a single query
+    const rows = await prisma.emailMessage.groupBy({
+      by: ["emailAccountId"],
+      where: {
+        emailAccountId: { in: accountIds.map(Number) },
+        direction: "received",
+        isRead: false,
+        folder: "inbox",
+      },
+      _count: { id: true },
+    });
+
+    // Build a map: { accountId: unreadCount }
+    const result = {};
+    accountIds.forEach((id) => { result[id] = 0; });
+    rows.forEach((row) => { result[row.emailAccountId] = row._count.id; });
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error("Bulk unread error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -146,95 +184,66 @@ function formatMessages(messages) {
 router.get("/conversations/:accountId", protect, async (req, res) => {
   try {
     const accountId = Number(req.params.accountId);
-    const { folder = "inbox", monthFilter = "current" } = req.query;
+    const { folder = "inbox", monthFilter = "current", bust } = req.query;
 
-    // Normalise to a known value to prevent cache-key injection
-    const safeFilter = MONTH_FILTERS.includes(monthFilter)
-      ? monthFilter
-      : "current";
-
+    const safeFilter = MONTH_FILTERS.includes(monthFilter) ? monthFilter : "current";
     const cacheKey = `inbox:${req.user.id}:${accountId}:${folder}:${safeFilter}`;
-    const cached = cache.get(cacheKey);
+    const cached = !bust ? cache.get(cacheKey) : null; // skip cache when bust param present
 
-    // ── Always return cached data instantly if available ──────
+    // ── Return cache instantly — NO sync triggered here ──────
+    // Sync is triggered only by explicit Refresh button or the
+    // background scheduler (imap.service.js runSync). Triggering
+    // a full IMAP sync on every inbox load was the main cause of
+    // 5-10 minute wait times.
     if (cached) {
-      // Kick off background sync → invalidate cache when done
-      // so the NEXT poll gets fresh data without blocking this one
-      prisma.emailAccount
-        .findUnique({ where: { id: accountId } })
-        .then((account) => {
-          if (!account) return;
-          runSyncForAccount(prisma, account.email)
-            .then(() => {
-              cache.del(cacheKey);
-              console.log(`🔄 Background sync done — cache cleared: ${cacheKey}`);
-            })
-            .catch(() => {});
-        });
-
-      return res.json({ success: true, data: cached });
+      return res.json({ success: true, data: cached, fromCache: true });
     }
 
-    // ── Cache miss: query DB FIRST, respond immediately ────────
-    // IMAP sync runs in background — never block the response on it.
-    const account = await prisma.emailAccount.findUnique({
-      where: { id: accountId },
-    });
-    if (account) {
-      // Fire-and-forget — do NOT await
-      runSyncForAccount(prisma, account.email)
-        .then(() => {
-          // Invalidate after sync so the next request picks up new mail
-          cache.del(cacheKey);
-          console.log(`🔄 Background sync done — cache cleared: ${cacheKey}`);
-        })
-        .catch(() => {});
-    }
-
-    // ── Build where condition ────────────────────────────────
+    // ── Cache miss: query DB directly, fast ──────────────────
     const startDate = resolveStartDate(safeFilter);
 
-    let whereCondition = {
+    // Build folder filter on EmailMessage for direction/folder
+    let msgWhere = {
       emailAccountId: accountId,
-      sentAt: { gte: startDate }, // ← month-based date filter
+      sentAt: { gte: startDate },
     };
 
     if (folder === "inbox") {
-      whereCondition = {
-        ...whereCondition,
-        folder: "inbox",
-        direction: "received",
-      };
+      msgWhere.folder = "inbox";
+      msgWhere.direction = "received";
     } else if (folder === "sent") {
-      whereCondition = {
-        ...whereCondition,
-        folder: "sent",
-        direction: "sent",
-      };
-    } else if (folder === "spam") {
-      whereCondition = { ...whereCondition, folder: "spam" };
-    } else if (folder === "trash") {
-      whereCondition = { ...whereCondition, folder: "trash" };
-    } else if (folder === "draft") {
-      whereCondition = { ...whereCondition, folder: "draft" };
+      msgWhere.folder = "sent";
+      msgWhere.direction = "sent";
+    } else {
+      msgWhere.folder = folder; // spam, trash, draft
     }
 
-    // ── Query: max 200 results, newest first ─────────────────
+    // Get one latest message per conversation using a subquery approach:
+    // Fetch latest 500 messages then deduplicate — much faster than
+    // fetching all messages and joining conversations.
     const messages = await prisma.emailMessage.findMany({
-      where: whereCondition,
+      where: msgWhere,
       orderBy: { sentAt: "desc" },
-      take: 200,
-      include: { conversation: true },
+      take: 500,
+      select: {
+        id: true,
+        conversationId: true,
+        subject: true,
+        fromEmail: true,
+        fromName: true,
+        toEmail: true,
+        direction: true,
+        sentAt: true,
+        isRead: true,
+        isStarred: true,
+        body: true,
+        folder: true,
+      },
     });
 
     const formatted = formatMessages(messages);
 
-    // ── Deduplicate by conversationId ────────────────────────
-    // The query returns one row per *message*, not per conversation.
-    // Multiple messages in the same thread share a conversationId,
-    // which causes React "duplicate key" errors in the inbox list.
-    // Since results are already sorted sentAt DESC, the first
-    // occurrence of each conversationId is the most recent — keep it.
+    // Deduplicate: keep first (most recent) per conversationId
     const seen = new Set();
     const deduplicated = formatted.filter((item) => {
       if (!item.conversationId || seen.has(item.conversationId)) return false;
@@ -242,13 +251,16 @@ router.get("/conversations/:accountId", protect, async (req, res) => {
       return true;
     });
 
-    // Short TTL (15 s) so new emails appear quickly
-    cache.set(cacheKey, deduplicated, 15);
+    // Cap at 200 conversations
+    const result = deduplicated.slice(0, 200);
 
-    return res.json({ success: true, data: deduplicated });
+    // Cache for 30 seconds
+    cache.set(cacheKey, result, 30);
+
+    return res.json({ success: true, data: result, fromCache: false });
   } catch (err) {
     console.error("Conversations error:", err);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
