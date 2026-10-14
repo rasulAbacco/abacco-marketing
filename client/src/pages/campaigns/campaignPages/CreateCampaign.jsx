@@ -127,7 +127,9 @@ const COLOR_FAMILIES = [
   },
 ];
 
-const LIMIT_OPTIONS = [10, 20, 30, 40, 50, 60, 70, 80, 100, 150, 200];
+// 200/hr is intentionally NOT a preset — anyone who needs it can pick
+// "Custom…" and type it (custom accepts up to 999/hr).
+const LIMIT_OPTIONS = [5, 10, 20, 30, 40, 50, 60, 70, 80, 100, 150];
 // Emails per HOUR per mailbox, by provider. Sends are spread evenly across
 // the hour (interval = 60 min ÷ limit), never sent in a burst. Must match
 // PROVIDER_HOURLY_LIMITS in server/src/services/campaignMailer.service.js.
@@ -138,7 +140,7 @@ const PROVIDER_HOURLY_LIMITS = {
   yahoo: 10,
 };
 const DEFAULT_HOURLY_LIMIT = 10; // any other provider
-// "1 email every 2 min" for 30/hr, "every 6 min" for 10/hr, "every 18 sec" for 200/hr.
+// "1 email every 2 min" for 30/hr, "every 12 min" for 5/hr, "every 24 sec" for 150/hr.
 const formatSendInterval = (perHour) => {
   const n = Number(perHour);
   if (!Number.isFinite(n) || n <= 0) return "";
