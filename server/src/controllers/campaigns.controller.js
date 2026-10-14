@@ -2068,10 +2068,8 @@ export const getCampaignRecipientEmails = async (req, res) => {
         .json({ success: false, message: "Invalid campaign id" });
     }
 
-    const owns = await prisma.campaign.findFirst({
-      where: { id, userId: req.user.id },
-      select: { id: true },
-    });
+    // Same access rule as /:id/status — owner, or admin/HR.
+    const owns = await findManageableCampaign(req, id, { id: true });
     if (!owns)
       return res
         .status(404)

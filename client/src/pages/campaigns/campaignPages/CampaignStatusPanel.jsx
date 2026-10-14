@@ -19,6 +19,8 @@ import {
   XCircle,
   Hourglass,
   Server,
+  Copy,
+  Check,
 } from "lucide-react";
 import { api } from "../../utils/api";
 import { startVisiblePolling } from "../../utils/polling";
@@ -75,14 +77,39 @@ const fmt = (d) =>
 
 const n = (v) => (v ?? 0).toLocaleString();
 
-const StatBox = ({ label, value, tone = "text-slate-900" }) => (
+const StatBox = ({ label, value, tone = "text-slate-900", action = null }) => (
   <div className="bg-white/80 rounded-xl border border-sky-100 p-3">
-    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-      {label}
-    </p>
+    <div className="flex items-start justify-between gap-1">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      {action}
+    </div>
     <p className={`text-lg font-bold ${tone}`}>{value}</p>
   </div>
 );
+
+// Clipboard write that also works on non-HTTPS / older browsers.
+const writeClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+};
 
 const ReasonList = ({ title, items, tone }) =>
   items?.length ? (
@@ -114,6 +141,32 @@ export default function CampaignStatusPanel({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // Copy skipped emails: "idle" | "loading" | "copied" | "error"
+  const [skippedCopy, setSkippedCopy] = useState("idle");
+
+  // Fetch every skipped recipient of this campaign and copy the addresses
+  // (one per line) so they can be pasted into another campaign.
+  const copySkippedEmails = async () => {
+    if (skippedCopy === "loading") return;
+    setSkippedCopy("loading");
+    try {
+      const res = await api.get(
+        `${API_BASE_URL}/api/campaigns/${campaignId}/recipients?status=skipped`,
+      );
+      const emails = (res.data?.data || [])
+        .map((r) => r.email)
+        .filter(Boolean);
+      if (!emails.length) {
+        setSkippedCopy("error");
+      } else {
+        const ok = await writeClipboard(emails.join("\n"));
+        setSkippedCopy(ok ? "copied" : "error");
+      }
+    } catch {
+      setSkippedCopy("error");
+    }
+    setTimeout(() => setSkippedCopy("idle"), 2000);
+  };
 
   // Pause / Resend — any time, by the user only.
   const pauseOrResend = async (action) => {
@@ -326,7 +379,42 @@ export default function CampaignStatusPanel({
             value={n(counts.failed)}
             tone="text-red-700"
           />
-          <StatBox label="Skipped" value={n(counts.skipped)} />
+          <StatBox
+            label="Skipped"
+            value={n(counts.skipped)}
+            action={
+              counts.skipped > 0 && (
+                <button
+                  type="button"
+                  onClick={copySkippedEmails}
+                  disabled={skippedCopy === "loading"}
+                  title={
+                    skippedCopy === "copied"
+                      ? "Copied!"
+                      : skippedCopy === "error"
+                        ? "Could not copy — try again"
+                        : "Copy skipped emails"
+                  }
+                  aria-label="Copy skipped emails"
+                  className={`p-1 rounded-md transition-colors disabled:opacity-50 ${
+                    skippedCopy === "copied"
+                      ? "text-emerald-600 bg-emerald-50"
+                      : skippedCopy === "error"
+                        ? "text-red-600 bg-red-50"
+                        : "text-slate-400 hover:text-sky-600 hover:bg-sky-50"
+                  }`}
+                >
+                  {skippedCopy === "loading" ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : skippedCopy === "copied" ? (
+                    <Check size={13} />
+                  ) : (
+                    <Copy size={13} />
+                  )}
+                </button>
+              )
+            }
+          />
           <StatBox
             label="Replied"
             value={n(counts.replied)}
